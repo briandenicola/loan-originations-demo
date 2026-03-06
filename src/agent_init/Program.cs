@@ -164,22 +164,22 @@ Console.WriteLine(new string('─', 70));
 
 var agentSpecs = new AgentSpec[]
 {
-    new("credit_profile_agent", "Loan Origination Credit Profile Agent",
+    new("credit-profile-agent", "Loan Origination Credit Profile Agent",
         "CreditProfileAgentPrompt.txt", "gpt-4.1"),
 
-    new("income_verification_agent", "Loan Origination Income Verification Agent",
+    new("income-verification-agent", "Loan Origination Income Verification Agent",
         "IncomeVerificationAgentPrompt.txt", "Phi-4-reasoning"),
 
-    new("fraud_screening_agent", "Loan Origination Fraud Screening Agent",
+    new("fraud-screening-agent", "Loan Origination Fraud Screening Agent",
         "FraudScreeningAgentPrompt.txt", "gpt-5.2-chat"),
 
-    new("policy_evaluation_agent", "Loan Origination Policy Evaluation Agent",
+    new("policy-evaluation-agent", "Loan Origination Policy Evaluation Agent",
         "PolicyEvaluationAgentPrompt.txt", "gpt-4.1"),
 
-    new("pricing_agent", "Loan Origination Pricing Agent",
+    new("pricing-agent", "Loan Origination Pricing Agent",
         "PricingAgentPrompt.txt", "Phi-4-reasoning"),
 
-    new("underwriting_recommendation_agent", "Loan Origination Underwriting Recommendation Agent",
+    new("underwriting-recommendation-agent", "Loan Origination Underwriting Recommendation Agent",
         "UnderwritingAgentPrompt.txt", "gpt-5.2-chat"),
 };
 
@@ -259,11 +259,11 @@ try
 
     var healthAgentsOps = projectClient.Agents;
     var healthVersion = await healthAgentsOps.CreateAgentVersionAsync(
-        agentName: "health_check_agent",
+        agentName: "health-check-agent",
         options: healthCreationOptions);
 
     healthSw.Stop();
-    Console.WriteLine($"  ✅ health_check_agent  version={healthVersion.Value.Version}  ({healthSw.ElapsedMilliseconds}ms)");
+    Console.WriteLine($"  ✅ health-check-agent  version={healthVersion.Value.Version}  ({healthSw.ElapsedMilliseconds}ms)");
     Console.WriteLine($"     id={healthVersion.Value.Id}, name={healthVersion.Value.Name}");
 
     // Step 7: Verify health check agent was created (retrieve by name)
@@ -271,7 +271,7 @@ try
     Console.WriteLine("Step 7: Verifying health check agent connectivity...");
     var runSw = Stopwatch.StartNew();
 
-    var agentRecord = await healthAgentsOps.GetAgentAsync("health_check_agent");
+    var agentRecord = await healthAgentsOps.GetAgentAsync("health-check-agent");
     runSw.Stop();
     Console.WriteLine($"  ✅ Agent verified via GetAgentAsync ({runSw.ElapsedMilliseconds}ms)");
     Console.WriteLine($"     Name: {agentRecord.Value.Name}");

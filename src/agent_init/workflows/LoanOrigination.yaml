@@ -6,12 +6,12 @@
 # a loan application and produce an underwriting recommendation.
 #
 # Agents (created by agent_init):
-#   - credit_profile_agent        (gpt-4.1)
-#   - income_verification_agent   (Phi-4-reasoning)
-#   - fraud_screening_agent       (gpt-5.2-chat)
-#   - policy_evaluation_agent     (gpt-4.1)
-#   - pricing_agent               (Phi-4-reasoning)
-#   - underwriting_recommendation_agent (gpt-5.2-chat)
+#   - credit-profile-agent        (gpt-4.1)
+#   - income-verification-agent   (Phi-4-reasoning)
+#   - fraud-screening-agent       (gpt-5.2-chat)
+#   - policy-evaluation-agent     (gpt-4.1)
+#   - pricing-agent               (Phi-4-reasoning)
+#   - underwriting-recommendation-agent (gpt-5.2-chat)
 #
 # Input: JSON string containing enriched application data
 #
@@ -44,7 +44,7 @@ trigger:
       displayName: Credit Profile Analysis
       conversationId: =Local.CreditConversationId
       agent:
-        name: credit_profile_agent
+        name: credit-profile-agent
       input:
         messages: =UserMessage("Analyze the credit profile data in the following loan application and provide a risk assessment.\n\nENRICHED APPLICATION DATA:\n" & Local.ApplicationData)
       output:
@@ -64,7 +64,7 @@ trigger:
       displayName: Income Verification Analysis
       conversationId: =Local.IncomeConversationId
       agent:
-        name: income_verification_agent
+        name: income-verification-agent
       input:
         messages: =UserMessage("Analyze the income verification data in the following loan application. Assess verification confidence and affordability.\n\nENRICHED APPLICATION DATA:\n" & Local.ApplicationData)
       output:
@@ -84,7 +84,7 @@ trigger:
       displayName: Fraud Screening
       conversationId: =Local.FraudConversationId
       agent:
-        name: fraud_screening_agent
+        name: fraud-screening-agent
       input:
         messages: =UserMessage("Analyze the fraud signals in the following loan application. Classify the fraud risk level and provide a recommendation.\n\nENRICHED APPLICATION DATA:\n" & Local.ApplicationData)
       output:
@@ -104,7 +104,7 @@ trigger:
       displayName: Policy Evaluation
       conversationId: =Local.PolicyConversationId
       agent:
-        name: policy_evaluation_agent
+        name: policy-evaluation-agent
       input:
         messages: =UserMessage("Evaluate the following loan application against all underwriting policy rules (POL-001 through POL-010). Provide per-rule assessment.\n\nENRICHED APPLICATION DATA:\n" & Local.ApplicationData)
       output:
@@ -120,11 +120,11 @@ trigger:
       conversationId: Local.PricingConversationId
 
     - kind: InvokeAzureAgent
-      id: invoke_pricing_agent
+      id: invoke_pricing-agent
       displayName: Pricing Analysis
       conversationId: =Local.PricingConversationId
       agent:
-        name: pricing_agent
+        name: pricing-agent
       input:
         messages: =UserMessage("Review the pricing data in the following loan application. Validate the risk tier, APR, and monthly payment calculations.\n\nENRICHED APPLICATION DATA:\n" & Local.ApplicationData)
       output:
@@ -166,7 +166,7 @@ trigger:
       displayName: Final Underwriting Recommendation
       conversationId: =Local.UnderwritingConversationId
       agent:
-        name: underwriting_recommendation_agent
+        name: underwriting-recommendation-agent
       input:
         messages: =UserMessage("Based on the following specialist analyses and application data, produce your final underwriting recommendation with APPROVE/CONDITIONAL/DECLINE status, confidence score, key factors, and professional rationale.\n\nSPECIALIST ANALYSES:\n" & Local.CombinedAnalysis & "\n\nORIGINAL APPLICATION DATA:\n" & Local.ApplicationData)
       output:

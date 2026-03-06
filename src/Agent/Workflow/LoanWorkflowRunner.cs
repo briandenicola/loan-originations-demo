@@ -11,8 +11,8 @@ namespace LoanOriginationDemo.Agent.Workflow;
 /// 
 /// The workflow is defined in LoanOrigination.yaml and executed via DeclarativeWorkflowBuilder.
 /// The YAML file defines sequential agent invocations:
-///   credit_profile_agent → income_verification_agent → fraud_screening_agent
-///   → policy_evaluation_agent → pricing_agent → underwriting_recommendation_agent
+///   credit-profile-agent → income-verification-agent → fraud-screening-agent
+///   → policy-evaluation-agent → pricing-agent → underwriting-recommendation-agent
 ///
 /// All agents are resolved by name from Azure AI Foundry Agent Service.
 /// </summary>

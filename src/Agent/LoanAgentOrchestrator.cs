@@ -156,7 +156,7 @@ public class LoanAgentOrchestrator
     }
 
     /// <summary>
-    /// Runs a startup health check by invoking the health_check_agent in Foundry.
+    /// Runs a startup health check by invoking the health-check-agent in Foundry.
     /// Confirms end-to-end connectivity: credential → Foundry → model → response.
     /// </summary>
     public async Task<bool> HealthCheckAsync()
@@ -173,14 +173,14 @@ public class LoanAgentOrchestrator
 
         try
         {
-            // Find the health_check_agent using new API
+            // Find the health-check-agent using new API
             bool healthAgentFound = false;
             int agentCount = 0;
             await foreach (var agent in _projectClient.Agents.GetAgentsAsync())
             {
                 agentCount++;
                 _logger.LogInformation("  Agent found: {Name} (id={Id})", agent.Name, agent.Id);
-                if (agent.Name == "health_check_agent")
+                if (agent.Name == "health-check-agent")
                     healthAgentFound = true;
             }
 
@@ -193,7 +193,7 @@ public class LoanAgentOrchestrator
             }
 
             // Verify agent record is accessible via GetAgentAsync
-            var agentRecord = await _projectClient.Agents.GetAgentAsync("health_check_agent");
+            var agentRecord = await _projectClient.Agents.GetAgentAsync("health-check-agent");
 
             sw.Stop();
             _logger.LogInformation("✅ Health check passed in {Duration}ms", sw.ElapsedMilliseconds);
