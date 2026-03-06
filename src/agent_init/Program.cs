@@ -350,11 +350,14 @@ try
         description = "Loan origination multi-agent workflow — orchestrates credit, income, fraud, policy, pricing, and underwriting agents"
     });
 
+    var requestOptions = new System.ClientModel.Primitives.RequestOptions();
+    requestOptions.AddHeader("Foundry-Features", "WorkflowAgents=V1Preview");
+
     var result = await projectClient.Agents.CreateAgentVersionAsync(
         agentName: "loan-origination-workflow",
         content: System.ClientModel.BinaryContent.Create(workflowBody),
-        foundryFeatures: "WorkflowAgentsV1Preview",
-        options: null);
+        foundryFeatures: null,
+        options: requestOptions);
 
     // Parse response to extract version info
     var rawResponse = result.GetRawResponse();
