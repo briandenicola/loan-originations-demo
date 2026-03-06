@@ -2,6 +2,7 @@ using System.Diagnostics;
 using System.Diagnostics.Metrics;
 using System.Text.Json;
 using Azure.AI.Agents.Persistent;
+using LoanOriginationDemo.Agent.Workflow;
 using LoanOriginationDemo.Models;
 using LoanOriginationDemo.Services;
 using Microsoft.Agents.AI;
@@ -104,11 +105,14 @@ public class LoanAgentPlugins
 }
 
 /// <summary>
-/// Orchestrates the S01–S10 agentic workflow using Microsoft Agent Framework.
-/// Retrieves the loan_orchestrator AIAgent from Foundry Agent Service and
-/// runs conversations through threads/runs. The orchestrator agent coordinates
-/// connected specialized agents (credit, income, fraud, policy, pricing, underwriting).
-/// Falls back to local rule-based orchestration when Foundry is unavailable.
+/// Orchestrates the S01–S10 agentic workflow using Microsoft Agent Framework Workflows.
+/// 
+/// Architecture: Uses WorkflowBuilder to define a graph of executors and Foundry agents:
+///   IntakeExecutor (data gathering) → fan-out to 3 specialist AI agents (concurrent) → 
+///   fan-in aggregation → underwriting_recommendation_agent → output.
+/// 
+/// This replaces the previous ConnectedAgent orchestrator pattern with in-process workflow
+/// orchestration, giving full visibility into each step and enabling concurrent agent execution.
 /// 
 /// Observability: emits OpenTelemetry traces (ActivitySource "LoanOrigination"),
 /// custom metrics (workflow duration, agent calls, recommendations), and structured logs.
@@ -118,12 +122,9 @@ public class LoanAgentOrchestrator
     private static readonly ActivitySource ActivitySource = new("LoanOrigination", "1.0.0");
     private static readonly Meter Meter = new("LoanOrigination", "1.0.0");
 
-    // Metrics
     private static readonly Counter<long> WorkflowCounter = Meter.CreateCounter<long>("loan.workflow.total", description: "Total workflow executions");
-    private static readonly Counter<long> AgentCallCounter = Meter.CreateCounter<long>("loan.agent.calls.total", description: "Total Foundry agent calls");
     private static readonly Counter<long> AgentErrorCounter = Meter.CreateCounter<long>("loan.agent.errors.total", description: "Foundry agent call failures");
     private static readonly Histogram<double> WorkflowDuration = Meter.CreateHistogram<double>("loan.workflow.duration_ms", "ms", "Workflow execution duration");
-    private static readonly Histogram<double> AgentCallDuration = Meter.CreateHistogram<double>("loan.agent.call.duration_ms", "ms", "Foundry agent call duration");
 
     private readonly LoanAgentPlugins _plugins;
     private readonly PersistentAgentsClient? _agentsClient;
@@ -131,9 +132,6 @@ public class LoanAgentOrchestrator
     private readonly ILogger<LoanAgentOrchestrator> _logger;
     private readonly string _outputDir;
     private readonly JsonSerializerOptions _jsonOpts;
-
-    // Cached orchestrator agent ID (resolved on first use)
-    private string? _orchestratorAgentId;
 
     public LoanAgentOrchestrator(
         LoanAgentPlugins plugins,
@@ -153,7 +151,7 @@ public class LoanAgentOrchestrator
             PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower
         };
 
-        _logger.LogInformation("LoanAgentOrchestrator initialized. Foundry Agent Service: {FoundryStatus}, OutputDir: {OutputDir}",
+        _logger.LogInformation("LoanAgentOrchestrator initialized (Agent Framework Workflows). Foundry: {FoundryStatus}, OutputDir: {OutputDir}",
             _agentsClient != null ? "Connected" : "NOT CONFIGURED", _outputDir);
     }
 
@@ -218,60 +216,13 @@ public class LoanAgentOrchestrator
         }
     }
 
-    /// <summary>
-    /// Resolves the orchestrator agent ID by listing agents and matching by name.
-    /// </summary>
-    private async Task<string?> ResolveOrchestratorAgentIdAsync()
-    {
-        if (_orchestratorAgentId != null) return _orchestratorAgentId;
-        if (_agentsClient == null) return null;
-
-        using var activity = ActivitySource.StartActivity("ResolveOrchestratorAgent");
-        var agentName = _config["Foundry:OrchestratorAgentName"] ?? "loan_orchestrator";
-        activity?.SetTag("agent.name", agentName);
-
-        try
-        {
-            _logger.LogInformation("Listing agents from Foundry to resolve '{AgentName}'...", agentName);
-            int agentCount = 0;
-            await foreach (var agent in _agentsClient.Administration.GetAgentsAsync())
-            {
-                agentCount++;
-                _logger.LogInformation("  Found agent: {Name} (model={Model}, id={Id})", agent.Name, agent.Model, agent.Id);
-                if (agent.Name == agentName)
-                {
-                    _orchestratorAgentId = agent.Id;
-                    _logger.LogInformation("✅ Resolved orchestrator agent '{Name}' → {Id} (scanned {Count} agents)", agentName, agent.Id, agentCount);
-                    activity?.SetTag("agent.id", agent.Id);
-                    activity?.SetStatus(ActivityStatusCode.Ok);
-                    return _orchestratorAgentId;
-                }
-            }
-            _logger.LogError("❌ Orchestrator agent '{Name}' not found among {Count} agents in Foundry. Falling back to local mode.", agentName, agentCount);
-            activity?.SetStatus(ActivityStatusCode.Error, "Agent not found");
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "❌ Failed to list agents from Foundry (endpoint: {Endpoint}). Status: {Status}. Falling back to local mode.",
-                _config["AzureOpenAI:Endpoint"], ex.Message);
-            activity?.SetStatus(ActivityStatusCode.Error, ex.Message);
-            activity?.AddEvent(new ActivityEvent("exception", tags: new ActivityTagsCollection
-            {
-                { "exception.type", ex.GetType().FullName ?? ex.GetType().Name },
-                { "exception.message", ex.Message },
-                { "exception.stacktrace", ex.StackTrace ?? "" },
-            }));
-        }
-        return null;
-    }
-
     public async Task<AgentRunResponse> RunWorkflowAsync(string applicationNo)
     {
         using var activity = ActivitySource.StartActivity("RunWorkflow", ActivityKind.Server);
         activity?.SetTag("loan.application_no", applicationNo);
         var sw = System.Diagnostics.Stopwatch.StartNew();
 
-        _logger.LogInformation("=== Starting workflow for application {AppNo} ===", applicationNo);
+        _logger.LogInformation("=== Starting Declarative Workflow for application {AppNo} ===", applicationNo);
 
         // Validate application exists
         var app = _plugins.GetApplication(applicationNo);
@@ -285,84 +236,32 @@ public class LoanAgentOrchestrator
         _logger.LogInformation("Application {AppNo} loaded: applicant={Applicant}, amount=${Amount}, type={Type}, term={Term}mo",
             applicationNo, app.ApplicantName, app.LoanAmountRequested, app.LoanType, app.RequestedTermMonths);
 
-        // Require Foundry Agent Service — no local fallback
-        if (_agentsClient == null)
+        // Require Foundry endpoint
+        var foundryEndpointStr = _config["AzureOpenAI:Endpoint"];
+        if (string.IsNullOrEmpty(foundryEndpointStr))
         {
-            _logger.LogError("❌ PersistentAgentsClient is not configured. Cannot run workflow.");
+            _logger.LogError("❌ AzureOpenAI:Endpoint is not configured. Cannot run workflow.");
             throw new InvalidOperationException("Azure AI Foundry is not configured. Set AzureOpenAI:Endpoint in appsettings.json.");
         }
 
-        var orchestratorId = await ResolveOrchestratorAgentIdAsync();
-        if (orchestratorId == null)
-        {
-            _logger.LogError("❌ Could not resolve orchestrator agent in Foundry. Ensure agents are initialized with agent_init.");
-            throw new InvalidOperationException("Orchestrator agent not found in Foundry. Run the agent initializer CLI first.");
-        }
+        activity?.SetTag("loan.execution_mode", "declarative_workflow");
+        WorkflowCounter.Add(1, new KeyValuePair<string, object?>("mode", "declarative_workflow"));
 
-        activity?.SetTag("loan.execution_mode", "foundry_agentic");
-        WorkflowCounter.Add(1, new KeyValuePair<string, object?>("mode", "agentic"));
-        var result = await RunAgenticWorkflowAsync(applicationNo, app, orchestratorId);
-
-        sw.Stop();
-        WorkflowDuration.Record(sw.ElapsedMilliseconds, new KeyValuePair<string, object?>("application_no", applicationNo));
-        activity?.SetTag("loan.run_id", result.RunId);
-        activity?.SetTag("loan.duration_ms", sw.ElapsedMilliseconds);
-        activity?.SetStatus(ActivityStatusCode.Ok);
-
-        _logger.LogInformation("=== Workflow complete for {AppNo}: runId={RunId}, duration={Duration}ms ===",
-            applicationNo, result.RunId, sw.ElapsedMilliseconds);
-
-        return result;
-    }
-
-    /// <summary>
-    /// Agentic workflow: creates a thread, sends the application to the Foundry
-    /// orchestrator agent, and lets the LLM drive the S01-S10 workflow through
-    /// connected agents. Each step creates observable runs/threads in Foundry.
-    /// </summary>
-    private async Task<AgentRunResponse> RunAgenticWorkflowAsync(
-        string applicationNo, LoanApplication app, string orchestratorAgentId)
-    {
-        using var activity = ActivitySource.StartActivity("RunAgenticWorkflow", ActivityKind.Internal);
-        activity?.SetTag("loan.application_no", applicationNo);
-        activity?.SetTag("agent.orchestrator_id", orchestratorAgentId);
-
-        var runId = $"RUN-{Guid.NewGuid().ToString("N")[..8].ToUpper()}";
-        activity?.SetTag("loan.run_id", runId);
-        var steps = new List<WorkflowStep>();
-        string Ts() => DateTime.UtcNow.ToString("o");
-
-        void Log(string id, string name, string status, string? detail = null)
-        {
-            steps.Add(new WorkflowStep { StepId = id, StepName = name, Status = status, Timestamp = Ts(), Detail = detail });
-            _logger.LogInformation("[{RunId}] {StepId} {StepName}: {Status} — {Detail}", runId, id, name, status, detail);
-        }
-
-        Log("S01", "Application Intake", "COMPLETE", $"Application {applicationNo} received");
-
-        // ── S02: Gather enrichment data ──────────────────────────────────────
-        using (var enrichActivity = ActivitySource.StartActivity("DataEnrichment"))
-        {
-            enrichActivity?.SetTag("loan.application_no", applicationNo);
-            _logger.LogDebug("[{RunId}] Starting data enrichment for {AppNo}...", runId, applicationNo);
-        }
+        // Build enriched application data (previously done in IntakeExecutor)
         var credit = _plugins.GetCreditProfile(applicationNo);
         var income = _plugins.GetIncomeVerification(applicationNo);
         var fraud = _plugins.GetFraudSignals(applicationNo);
         var thresholds = _plugins.GetPolicyThresholds();
         var quote = _plugins.ComputeQuote(applicationNo, app.LoanAmountRequested, app.RequestedTermMonths, app.LoanType);
-
         double verifiedDti = income?.VerifiedMonthlyIncome > 0
             ? Math.Round(app.TotalMonthlyDebtPayments / income.VerifiedMonthlyIncome, 4) : 999;
-
         var rec = _plugins.EvaluateUnderwriting(
-            runId, applicationNo, app.LoanAmountRequested, app.RequestedTermMonths,
+            $"RUN-WF", applicationNo, app.LoanAmountRequested, app.RequestedTermMonths,
             app.LoanType, income?.VerifiedMonthlyIncome ?? 0, app.TotalMonthlyDebtPayments,
             credit?.BureauScore ?? 0, fraud?.IdentityRiskScore ?? 1.0,
             quote.PaymentToIncomePct, verifiedDti);
 
-        // Build the enriched context for the orchestrator agent
-        var enrichedContext = JsonSerializer.Serialize(new
+        var enrichedData = JsonSerializer.Serialize(new
         {
             application = new
             {
@@ -379,6 +278,7 @@ public class LoanAgentOrchestrator
             credit_profile = credit,
             income_verification = income,
             fraud_signals = fraud,
+            policy_thresholds = thresholds,
             pricing_quote = new
             {
                 apr_pct = quote.AprPct,
@@ -394,97 +294,61 @@ public class LoanAgentOrchestrator
                 conditions = rec.Conditions,
             },
             verified_dti_pct = verifiedDti,
-        }, _jsonOpts);
+        }, new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower, WriteIndented = false });
 
-        _logger.LogDebug("[{RunId}] Enriched context size: {Size} chars", runId, enrichedContext.Length);
+        _logger.LogInformation("Enriched application data: {Size} chars", enrichedData.Length);
 
-        Log("S02", "Data Enrichment", "COMPLETE", "All enrichment APIs called (credit, income, fraud, policy, pricing)");
-        Log("S03", "Credit Profile Agent", "COMPLETE", $"Bureau score: {credit?.BureauScore} ({credit?.ScoreBand})");
-        Log("S04", "Income Verification Agent", "COMPLETE", $"Status: {income?.VerificationStatus}, Verified: ${income?.VerifiedMonthlyIncome}/mo");
-        Log("S05", "Fraud Screening Agent", "COMPLETE", $"Identity risk: {fraud?.IdentityRiskScore}, Manual review: {fraud?.RecommendedManualReview}");
-        Log("S06", "Policy Evaluation Agent", "COMPLETE", $"{thresholds.Count} rules evaluated, {rec.PolicyHits.Count(h => h.Outcome != "PASS")} flags");
-        Log("S07", "DTI & Affordability", "COMPLETE", $"Verified DTI: {verifiedDti:P1}");
-        Log("S08", "Pricing Agent", "COMPLETE", $"APR: {quote.AprPct}%, Payment: ${quote.EstimatedMonthlyPayment}/mo");
-
-        // ── S09: Run the Foundry orchestrator agent via Agent Framework ──────
-        string agentRationale;
-        string? threadId = null;
-        string? foundryRunId = null;
-
+        // Execute the Declarative YAML workflow
+        using var loggerFactory = LoggerFactory.Create(b => b.AddConsole().SetMinimumLevel(LogLevel.Debug));
+        var workflowRunner = new Workflow.LoanWorkflowRunner(
+            new Uri(foundryEndpointStr), _logger, loggerFactory);
+        Workflow.WorkflowResult workflowResult;
         try
         {
-            using var agentActivity = ActivitySource.StartActivity("FoundryAgentRun", ActivityKind.Client);
-            agentActivity?.SetTag("gen_ai.agent.id", orchestratorAgentId);
-            agentActivity?.SetTag("gen_ai.agent.name", "loan_orchestrator");
-            agentActivity?.SetTag("gen_ai.provider.name", "Azure AI Foundry");
-            agentActivity?.SetTag("gen_ai.operation.name", "invoke_agent");
-            agentActivity?.SetTag("loan.application_no", applicationNo);
-
-            var agentSw = System.Diagnostics.Stopwatch.StartNew();
-            AgentCallCounter.Add(1);
-
-            _logger.LogInformation("[{RunId}] Sending enriched application to Foundry orchestrator agent {AgentId}...", runId, orchestratorAgentId);
-            _logger.LogDebug("[{RunId}] Agent prompt includes: application data, credit ({Score}), income ({IncomeStatus}), fraud ({FraudRisk}), pricing (APR {Apr}%), recommendation ({RecStatus})",
-                runId, credit?.BureauScore, income?.VerificationStatus, fraud?.IdentityRiskScore, quote.AprPct, rec.RecommendationStatus);
-
-            // Get the orchestrator as an AIAgent via Agent Framework
-            var orchestratorAgent = await _agentsClient!.GetAIAgentAsync(orchestratorAgentId);
-            _logger.LogDebug("[{RunId}] AIAgent resolved from Foundry. Calling RunAsync...", runId);
-
-            // Create a prompt for the orchestrator to analyze and produce a recommendation
-            var agentPrompt =
-                $"Analyze this loan application and produce a comprehensive underwriting assessment.\n\n" +
-                $"ENRICHED APPLICATION DATA:\n{enrichedContext}\n\n" +
-                $"Based on the data above:\n" +
-                $"1. Summarize the applicant's risk profile\n" +
-                $"2. Explain the recommendation: {rec.RecommendationStatus} (confidence: {rec.ConfidenceScore:F2})\n" +
-                $"3. Address key risk factors and borrower strengths\n" +
-                $"4. Note any conditions or flags requiring human attention\n" +
-                $"5. Provide a clear, professional rationale for the human reviewer";
-
-            // RunAsync creates a thread and run in Foundry Agent Service
-            var agentResponse = await orchestratorAgent.RunAsync(agentPrompt);
-
-            agentSw.Stop();
-            AgentCallDuration.Record(agentSw.ElapsedMilliseconds);
-
-            agentRationale = agentResponse.Text;
-            threadId = agentResponse.AdditionalProperties?.GetValueOrDefault("threadId")?.ToString();
-            foundryRunId = agentResponse.ResponseId;
-
-            agentActivity?.SetTag("foundry.thread_id", threadId);
-            agentActivity?.SetTag("foundry.run_id", foundryRunId);
-            agentActivity?.SetTag("gen_ai.response.length", agentRationale?.Length ?? 0);
-            agentActivity?.SetTag("agent.call.duration_ms", agentSw.ElapsedMilliseconds);
-            agentActivity?.SetStatus(ActivityStatusCode.Ok);
-
-            _logger.LogInformation("[{RunId}] Foundry agent run complete. Thread: {ThreadId}, Run: {FoundryRunId}, Duration: {Duration}ms, Response: {Length} chars",
-                runId, threadId ?? "N/A", foundryRunId ?? "N/A", agentSw.ElapsedMilliseconds, agentRationale?.Length ?? 0);
-            _logger.LogTrace("[{RunId}] Agent response text:\n{Rationale}", runId, agentRationale);
-
-            Log("S09", "Orchestrator Agent Analysis (Foundry)", "COMPLETE",
-                $"AI rationale generated via Foundry Agent Service [thread={threadId}, run={foundryRunId}, duration={agentSw.ElapsedMilliseconds}ms]");
+            workflowResult = await workflowRunner.ExecuteAsync(enrichedData);
         }
         catch (Exception ex)
         {
             AgentErrorCounter.Add(1);
-            _logger.LogError(ex, "[{RunId}] ❌ Foundry agent run failed. Error: {ErrorType}: {ErrorMessage}",
-                runId, ex.GetType().Name, ex.Message);
-            activity?.AddEvent(new ActivityEvent("AgentError", tags: new ActivityTagsCollection
-            {
-                { "error.type", ex.GetType().Name },
-                { "error.message", ex.Message },
-                { "exception.stacktrace", ex.StackTrace ?? "" },
-            }));
-            throw new InvalidOperationException($"Foundry agent run failed: {ex.Message}", ex);
+            _logger.LogError(ex, "❌ Agent Framework workflow failed for {AppNo}: {Error}", applicationNo, ex.Message);
+            activity?.SetStatus(ActivityStatusCode.Error, ex.Message);
+            throw new InvalidOperationException($"Agent workflow failed: {ex.Message}", ex);
         }
 
-        rec.RationaleSummary = agentRationale ?? rec.RationaleSummary;
-        Log("S10", "Human Review Ready", "PENDING", "Awaiting reviewer decision");
+        // Use already-computed data for the response
+        var runId = $"RUN-{Guid.NewGuid().ToString("N")[..8].ToUpper()}";
 
-        // Build output
-        return await BuildAndSaveResponse(runId, applicationNo, app, credit, income, fraud,
-            quote, rec, verifiedDti, steps, threadId, foundryRunId);
+        // Override the rule-based rationale with the AI-generated one
+        rec.RationaleSummary = workflowResult.Rationale;
+
+        // Build workflow step log
+        var steps = new List<WorkflowStep>
+        {
+            new() { StepId = "S01", StepName = "Application Intake", Status = "COMPLETE", Timestamp = DateTime.UtcNow.ToString("o"), Detail = $"Application {applicationNo} received" },
+            new() { StepId = "S02", StepName = "Data Enrichment", Status = "COMPLETE", Timestamp = DateTime.UtcNow.ToString("o"), Detail = "All enrichment APIs called" },
+            new() { StepId = "S03", StepName = "Credit Profile Agent", Status = "COMPLETE", Timestamp = DateTime.UtcNow.ToString("o"), Detail = $"Bureau score: {credit?.BureauScore} ({credit?.ScoreBand})" },
+            new() { StepId = "S04", StepName = "Income Verification Agent", Status = "COMPLETE", Timestamp = DateTime.UtcNow.ToString("o"), Detail = $"Status: {income?.VerificationStatus}, Verified: ${income?.VerifiedMonthlyIncome}/mo" },
+            new() { StepId = "S05", StepName = "Fraud Screening Agent", Status = "COMPLETE", Timestamp = DateTime.UtcNow.ToString("o"), Detail = $"Identity risk: {fraud?.IdentityRiskScore}, Manual review: {fraud?.RecommendedManualReview}" },
+            new() { StepId = "S06", StepName = "Policy Evaluation", Status = "COMPLETE", Timestamp = DateTime.UtcNow.ToString("o"), Detail = $"{thresholds.Count} rules evaluated" },
+            new() { StepId = "S07", StepName = "DTI & Affordability", Status = "COMPLETE", Timestamp = DateTime.UtcNow.ToString("o"), Detail = $"Verified DTI: {verifiedDti:P1}" },
+            new() { StepId = "S08", StepName = "Pricing", Status = "COMPLETE", Timestamp = DateTime.UtcNow.ToString("o"), Detail = $"APR: {quote.AprPct}%, Payment: ${quote.EstimatedMonthlyPayment}/mo" },
+            new() { StepId = "S09", StepName = "Underwriting Agent (Declarative Workflow)", Status = "COMPLETE", Timestamp = DateTime.UtcNow.ToString("o"), Detail = $"AI rationale generated via Declarative YAML Workflow [{workflowResult.DurationMs}ms]" },
+            new() { StepId = "S10", StepName = "Human Review Ready", Status = "PENDING", Timestamp = DateTime.UtcNow.ToString("o"), Detail = "Awaiting reviewer decision" },
+        };
+
+        var result = await BuildAndSaveResponse(runId, applicationNo, app, credit, income, fraud,
+            quote, rec, verifiedDti, steps, workflowResult.ThreadId, workflowResult.FoundryRunId);
+
+        sw.Stop();
+        WorkflowDuration.Record(sw.ElapsedMilliseconds, new KeyValuePair<string, object?>("application_no", applicationNo));
+        activity?.SetTag("loan.run_id", result.RunId);
+        activity?.SetTag("loan.duration_ms", sw.ElapsedMilliseconds);
+        activity?.SetStatus(ActivityStatusCode.Ok);
+
+        _logger.LogInformation("=== Workflow complete for {AppNo}: runId={RunId}, duration={Duration}ms ===",
+            applicationNo, result.RunId, sw.ElapsedMilliseconds);
+
+        return result;
     }
 
     private async Task<AgentRunResponse> BuildAndSaveResponse(
@@ -529,8 +393,8 @@ public class LoanAgentOrchestrator
             ["current_step"] = "S10",
             ["status"] = "AWAITING_REVIEW",
             ["agent_framework"] = "Microsoft Agent Framework / Foundry Agent Service",
-            ["execution_mode"] = "Foundry Agentic (threads/runs)",
-            ["llm_model"] = "gpt-4.1 (Azure AI Foundry)",
+            ["execution_mode"] = "Declarative YAML Workflow (LoanOrigination.yaml)",
+            ["llm_model"] = "gpt-4.1, gpt-5.2-chat, Phi-4-reasoning (Azure AI Foundry)",
             ["steps"] = steps,
         };
         if (threadId != null) workflowLog["foundry_thread_id"] = threadId;

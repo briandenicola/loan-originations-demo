@@ -121,7 +121,7 @@ if (!string.IsNullOrEmpty(foundryEndpoint))
     var persistentAgentsClient = new PersistentAgentsClient(foundryEndpoint, credential);
     builder.Services.AddSingleton(persistentAgentsClient);
     Console.WriteLine($"✅ Microsoft Agent Framework configured: {foundryEndpoint}");
-    Console.WriteLine($"   Orchestrator agent: {builder.Configuration["Foundry:OrchestratorAgentName"] ?? "loan_orchestrator"}");
+    Console.WriteLine($"   Workflow:  Declarative YAML (LoanOrigination.yaml)");
     Console.WriteLine("   Auth chain: ManagedIdentity → EnvironmentCredential → AzureCliCredential");
 }
 else
