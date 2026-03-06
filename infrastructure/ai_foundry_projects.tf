@@ -32,12 +32,12 @@ module "project_1" {
 module "project_2" {
   depends_on = [
     azapi_resource.ai_foundry,
-    azapi_resource.project_1
+    module.project_1
   ]
   source   = "./project"
 
   foundry_project = {
-    name          = local.project_name
+    name          = "${local.project_name}-nextgen"
     location      = local.location
     resource_name = local.resource_name
     tag           = var.tags

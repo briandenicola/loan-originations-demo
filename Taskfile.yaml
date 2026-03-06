@@ -7,7 +7,8 @@ vars:
   TITLE: Loan Origination
   DEFAULT_REGION: eastus2
   APP_PORT: 8081
-  FOUNDRY_ENDPOINT: FOUNDRY_NEXTGEN_ENDPOINT
+  ENDPOINT_POINT: FOUNDRY_NEXTGEN_ENDPOINT
+
 tasks:
   default:
     cmds:
