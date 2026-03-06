@@ -24,7 +24,18 @@ module "project_1" {
     {
         name     = "gpt-4.1"
         version  = "2025-04-14"
-        format = "OpenAI"
-    }]
+        format   = "OpenAI"
+    },
+    {
+        name     = "gpt-5.2-chat"
+        version  = "2026-02-10"
+        format   = "OpenAI"
+    },
+    {
+        name     = "Phi-4-reasoning"
+        version  = "1"
+        format   = "OpenAI"
+    }
+    ]
   }
 }

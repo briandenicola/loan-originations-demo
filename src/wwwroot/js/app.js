@@ -145,6 +145,32 @@ async function runAgent() {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ application_no: currentApp.applicationNo }),
         });
+
+        if (!res.ok) {
+            const errBody = await res.json().catch(() => ({ message: res.statusText }));
+            const errMsg = errBody.message || errBody.error || `HTTP ${res.status}`;
+            console.error('Agent API error:', res.status, errBody);
+
+            // Mark all remaining steps as failed
+            stepDefs.forEach(s => {
+                const el = document.getElementById(`step-${s.id}`);
+                if (el && !el.classList.contains('complete')) {
+                    el.classList.add('error');
+                    el.querySelector('.wf-step-icon').textContent = '❌';
+                    el.querySelector('.wf-step-detail').textContent = 'Failed';
+                }
+            });
+
+            // Show error banner
+            stepsContainer.insertAdjacentHTML('afterend',
+                `<div class="agent-error-banner" style="background:#fee;border:2px solid #c00;border-radius:8px;padding:16px;margin-top:16px;color:#900">
+                    <strong>⚠️ Agent Workflow Error</strong><br>
+                    <span style="font-size:0.95rem">${errMsg}</span><br>
+                    <span style="font-size:0.85rem;color:#666">Status: ${res.status} — Check server logs for details.</span>
+                </div>`);
+            return;
+        }
+
         agentResult = await res.json();
 
         // Update steps with real data
@@ -172,7 +198,12 @@ async function runAgent() {
         renderReviewDashboard();
         showSection('reviewSection');
     } catch (err) {
-        alert('Agent workflow failed: ' + err.message);
+        console.error('Agent workflow network error:', err);
+        stepsContainer.insertAdjacentHTML('afterend',
+            `<div class="agent-error-banner" style="background:#fee;border:2px solid #c00;border-radius:8px;padding:16px;margin-top:16px;color:#900">
+                <strong>⚠️ Network Error</strong><br>
+                <span style="font-size:0.95rem">Could not reach the agent service: ${err.message}</span>
+            </div>`);
     }
 }
 
@@ -386,27 +417,63 @@ function destroyChart(id) {
 
 // ── Recompute ─────────────────────────────────────────────────
 async function recompute() {
-    const amount = parseFloat(document.getElementById('adjAmount').value);
-    const term = parseInt(document.getElementById('adjTerm').value);
-    const p = agentResult.prepared;
+    const btn = document.querySelector('[onclick="recompute()"]');
+    const origText = btn.textContent;
+    btn.textContent = '⏳ Recomputing...';
+    btn.disabled = true;
 
-    const res = await fetch(`${API}/api/v1/agent/recompute`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-            application_no: currentApp.applicationNo,
-            run_id: agentResult.runId,
-            requested_amount: amount,
-            requested_term_months: term,
-            loan_type: p.loanType || p.loan_type,
-        }),
-    });
-    const result = await res.json();
+    try {
+        const amount = parseFloat(document.getElementById('adjAmount').value);
+        const term = parseInt(document.getElementById('adjTerm').value);
+        const p = agentResult.prepared;
 
-    // Update recommendation in agentResult
-    agentResult.recommendation.quote = result.quote;
-    Object.assign(agentResult.recommendation, result.recommendation);
-    renderReviewDashboard();
+        console.log('Recompute request:', { application_no: currentApp.applicationNo, amount, term });
+
+        const res = await fetch(`${API}/api/v1/agent/recompute`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                application_no: currentApp.applicationNo,
+                run_id: agentResult.runId,
+                requested_amount: amount,
+                requested_term_months: term,
+                loan_type: p.loanType || p.loan_type,
+            }),
+        });
+
+        if (!res.ok) {
+            const err = await res.text();
+            console.error('Recompute failed:', res.status, err);
+            alert(`Recompute failed: ${res.status} ${err}`);
+            return;
+        }
+
+        const result = await res.json();
+        console.log('Recompute result:', result);
+
+        // Update recommendation and quote in agentResult
+        if (result.quote) {
+            agentResult.recommendation.quote = result.quote;
+        }
+        if (result.recommendation) {
+            agentResult.recommendation.recommendation_status = result.recommendation.recommendationStatus || result.recommendation.recommendation_status;
+            agentResult.recommendation.confidence_score = result.recommendation.confidenceScore || result.recommendation.confidence_score;
+            agentResult.recommendation.rationale_summary = result.recommendation.rationaleSummary || result.recommendation.rationale_summary;
+            agentResult.recommendation.key_factors = result.recommendation.keyFactors || result.recommendation.key_factors;
+            agentResult.recommendation.conditions = result.recommendation.conditions || result.recommendation.conditions;
+            agentResult.recommendation.policy_hits = result.recommendation.policyHits || result.recommendation.policy_hits;
+        }
+
+        renderReviewDashboard();
+        btn.textContent = '✅ Updated!';
+        setTimeout(() => { btn.textContent = origText; }, 2000);
+    } catch (err) {
+        console.error('Recompute error:', err);
+        alert(`Recompute error: ${err.message}`);
+    } finally {
+        btn.disabled = false;
+        if (btn.textContent === '⏳ Recomputing...') btn.textContent = origText;
+    }
 }
 
 // ── Submit Decision ───────────────────────────────────────────

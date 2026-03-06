@@ -13,7 +13,7 @@ output "OPENAI_ENDPOINT" {
     sensitive = false
 }
 
-output "PROJECT_ENDPOINT" {
+output "FOUNDRY_ENDPOINT" {
     value = module.project_1.PROJECT_ENDPOINT
     sensitive = false
 }
