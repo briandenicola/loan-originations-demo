@@ -7,7 +7,7 @@ vars:
   TITLE: Loan Origination
   DEFAULT_REGION: eastus2
   APP_PORT: 8081
-
+  FOUNDRY_ENDPOINT: FOUNDRY_NEXTGEN_ENDPOINT
 tasks:
   default:
     cmds:
@@ -55,7 +55,7 @@ tasks:
       - dotnet run -- --endpoint={{.FOUNDRY_ENDPOINT}}
     vars:
       FOUNDRY_ENDPOINT:
-        sh: terraform -chdir=../../infrastructure output -raw FOUNDRY_ENDPOINT
+        sh: terraform -chdir=../../infrastructure output -raw {{.ENDPOINT_POINT}}
 
   build:
     desc: Builds the .NET web application

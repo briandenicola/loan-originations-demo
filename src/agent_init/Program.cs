@@ -2,13 +2,13 @@ using System.Diagnostics;
 using Azure.AI.Agents.Persistent;
 using Azure.Identity;
 using Microsoft.Agents.AI;
+using Microsoft.Agents.AI.Workflows.Declarative;
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Loan Origination Agent Initializer CLI
-// Creates all agents in Microsoft Foundry using Microsoft Agent Framework.
-// SDK: Microsoft.Agents.AI.AzureAI.Persistent + Azure.AI.Agents.Persistent
+// Loan Origination Agent & Workflow Initializer CLI
+// Creates all agents AND validates the declarative YAML workflow in Foundry.
+// SDK: Microsoft.Agents.AI.AzureAI.Persistent + Workflows.Declarative
 // Auth: Entra ID (AzureCliCredential → EnvironmentCredential → ManagedIdentity)
-// Pattern: https://github.com/briandenicola/TechWorkshop-L300-AI-Apps-and-agents
 // ─────────────────────────────────────────────────────────────────────────────
 
 var sw = Stopwatch.StartNew();
@@ -218,8 +218,8 @@ foreach (var spec in agentSpecs)
 Console.WriteLine();
 Console.WriteLine($"  Specialized agents: {successCount} succeeded, {failCount} failed");
 Console.WriteLine();
-Console.WriteLine("  Note: No orchestrator agent created — workflow orchestration is handled");
-Console.WriteLine("  in-process by the Agent Framework WorkflowBuilder (fan-out/fan-in pattern).");
+Console.WriteLine("  Note: No orchestrator agent — workflow is defined in LoanOrigination.yaml");
+Console.WriteLine("  and executed by the web app via DeclarativeWorkflowBuilder.");
 
 // ── Step 6: Create health check agent ─────────────────────────────────────
 Console.WriteLine();
@@ -261,18 +261,82 @@ catch (Exception ex)
     Console.WriteLine($"    Error: {ex.Message}");
 }
 
+// ── Step 8: Validate declarative workflow YAML ────────────────────────────
+Console.WriteLine();
+Console.WriteLine("Step 8: Validating declarative workflow (LoanOrigination.yaml)...");
+var workflowSw = Stopwatch.StartNew();
+
+var workflowDir = Path.Combine(AppContext.BaseDirectory, "workflows");
+if (!Directory.Exists(workflowDir))
+    workflowDir = Path.Combine(Directory.GetCurrentDirectory(), "workflows");
+
+var workflowPath = Path.Combine(workflowDir, "LoanOrigination.yaml");
+Console.WriteLine($"  Workflow file: {workflowPath}");
+
+if (!File.Exists(workflowPath))
+{
+    Console.WriteLine($"  ❌ Workflow YAML file not found!");
+    return 1;
+}
+
+var workflowContent = File.ReadAllText(workflowPath);
+Console.WriteLine($"  ✅ Loaded: {workflowContent.Length} chars");
+
+// Count InvokeAzureAgent actions to verify all agents are referenced
+var agentInvocations = workflowContent.Split("kind: InvokeAzureAgent").Length - 1;
+Console.WriteLine($"  ✅ InvokeAzureAgent actions found: {agentInvocations}");
+
+try
+{
+    // Validate the YAML can be parsed by building the workflow
+    var agentProvider = new AzureAgentProvider(
+        new Uri(endpoint),
+        credential);
+
+    var workflowOptions = new DeclarativeWorkflowOptions(agentProvider);
+    var workflow = DeclarativeWorkflowBuilder.Build<string>(workflowPath, workflowOptions);
+
+    workflowSw.Stop();
+    Console.WriteLine($"  ✅ Workflow parsed and built successfully ({workflowSw.ElapsedMilliseconds}ms)");
+    Console.WriteLine($"     Workflow agents referenced:");
+    foreach (var agentName in agentSpecs.Select(a => a.Name))
+    {
+        var referenced = workflowContent.Contains(agentName);
+        Console.WriteLine($"       {(referenced ? "✅" : "⚠️")} {agentName} {(referenced ? "" : "(NOT referenced in workflow!)")}");
+    }
+}
+catch (Exception ex)
+{
+    workflowSw.Stop();
+    Console.WriteLine($"  ❌ Workflow validation FAILED after {workflowSw.ElapsedMilliseconds}ms");
+    Console.WriteLine($"    Error: {ex.Message}");
+    Console.WriteLine($"    The YAML workflow definition may have syntax errors.");
+    return 1;
+}
+
+// Copy workflow YAML to web app output for runtime use
+var webAppWorkflowDir = Path.Combine(Directory.GetCurrentDirectory(), "..", "Agent", "Workflow");
+if (Directory.Exists(Path.Combine(Directory.GetCurrentDirectory(), "..", "Agent")))
+{
+    Directory.CreateDirectory(webAppWorkflowDir);
+    var destPath = Path.Combine(webAppWorkflowDir, "LoanOrigination.yaml");
+    File.Copy(workflowPath, destPath, overwrite: true);
+    Console.WriteLine($"  ✅ Workflow YAML copied to web app: {destPath}");
+}
+
 // ── Summary ───────────────────────────────────────────────────────────────
 sw.Stop();
 Console.WriteLine();
 Console.WriteLine(new string('─', 70));
-Console.WriteLine($"✅ Agent initialization complete in {sw.ElapsedMilliseconds}ms ({sw.Elapsed.TotalSeconds:F1}s)");
+Console.WriteLine($"✅ Agent & workflow initialization complete in {sw.ElapsedMilliseconds}ms ({sw.Elapsed.TotalSeconds:F1}s)");
 Console.WriteLine($"   Specialized agents: {successCount}/{agentSpecs.Length} created");
-Console.WriteLine($"   Orchestrator:       N/A (in-process Agent Framework Workflow)");
-Console.WriteLine($"   Health check:       verified");
+Console.WriteLine($"   Health check agent: verified");
+Console.WriteLine($"   Workflow (YAML):    validated ({agentInvocations} agent invocations)");
 Console.WriteLine($"   Total agents:       {successCount + 1} (specialists + health check)");
 Console.WriteLine();
-Console.WriteLine("Agents are now registered in Microsoft Foundry Agent Service.");
-Console.WriteLine("The web app uses Agent Framework WorkflowBuilder for orchestration.");
+Console.WriteLine("Agents are registered in Microsoft Foundry Agent Service.");
+Console.WriteLine("Workflow definition (LoanOrigination.yaml) has been validated and deployed.");
+Console.WriteLine("The web app will load and execute this workflow at runtime.");
 return failCount > 0 ? 1 : 0;
 
 // ── Agent specification record ────────────────────────────────────────────

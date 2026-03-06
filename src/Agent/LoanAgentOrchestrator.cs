@@ -105,14 +105,14 @@ public class LoanAgentPlugins
 }
 
 /// <summary>
-/// Orchestrates the S01–S10 agentic workflow using Microsoft Agent Framework Workflows.
+/// Orchestrates the S01–S10 agentic workflow using a declarative YAML workflow definition.
 /// 
-/// Architecture: Uses WorkflowBuilder to define a graph of executors and Foundry agents:
-///   IntakeExecutor (data gathering) → fan-out to 3 specialist AI agents (concurrent) → 
-///   fan-in aggregation → underwriting_recommendation_agent → output.
+/// Architecture: The workflow is defined in LoanOrigination.yaml (owned by agent_init) and
+/// executed at runtime via DeclarativeWorkflowBuilder + InProcessExecution. The YAML file
+/// defines sequential InvokeAzureAgent actions for 6 specialist agents in Foundry.
 /// 
-/// This replaces the previous ConnectedAgent orchestrator pattern with in-process workflow
-/// orchestration, giving full visibility into each step and enabling concurrent agent execution.
+/// This class handles data enrichment (S01-S02, S07), builds the enriched JSON payload,
+/// and passes it to the declarative workflow for AI analysis (S03-S06, S08-S09).
 /// 
 /// Observability: emits OpenTelemetry traces (ActivitySource "LoanOrigination"),
 /// custom metrics (workflow duration, agent calls, recommendations), and structured logs.
