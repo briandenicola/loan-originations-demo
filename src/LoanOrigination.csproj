@@ -14,10 +14,10 @@
   </ItemGroup>
 
   <ItemGroup>
+    <PackageReference Include="Azure.AI.Projects" Version="2.0.0-beta.1" />
     <PackageReference Include="Azure.Identity" Version="1.18.0" />
     <PackageReference Include="Azure.Monitor.OpenTelemetry.Exporter" Version="1.6.0" />
     <PackageReference Include="CsvHelper" Version="33.0.1" />
-    <PackageReference Include="Microsoft.Agents.AI.AzureAI.Persistent" Version="1.0.0-preview.260304.1" />
     <PackageReference Include="Microsoft.Agents.AI.Workflows" Version="1.0.0-rc3" />
     <PackageReference Include="Microsoft.Agents.AI.Workflows.Declarative" Version="1.0.0-rc3" />
     <PackageReference Include="Microsoft.Agents.AI.Workflows.Declarative.AzureAI" Version="1.0.0-rc3" />

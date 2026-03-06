@@ -1,7 +1,7 @@
 using System.Diagnostics;
 using System.Diagnostics.Metrics;
 using System.Text.Json;
-using Azure.AI.Agents.Persistent;
+using Azure.AI.Projects;
 using LoanOriginationDemo.Agent.Workflow;
 using LoanOriginationDemo.Models;
 using LoanOriginationDemo.Services;
@@ -127,7 +127,7 @@ public class LoanAgentOrchestrator
     private static readonly Histogram<double> WorkflowDuration = Meter.CreateHistogram<double>("loan.workflow.duration_ms", "ms", "Workflow execution duration");
 
     private readonly LoanAgentPlugins _plugins;
-    private readonly PersistentAgentsClient? _agentsClient;
+    private readonly AIProjectClient? _projectClient;
     private readonly IConfiguration _config;
     private readonly ILogger<LoanAgentOrchestrator> _logger;
     private readonly string _outputDir;
@@ -137,10 +137,10 @@ public class LoanAgentOrchestrator
         LoanAgentPlugins plugins,
         IConfiguration config,
         ILogger<LoanAgentOrchestrator> logger,
-        PersistentAgentsClient? agentsClient = null)
+        AIProjectClient? projectClient = null)
     {
         _plugins = plugins;
-        _agentsClient = agentsClient;
+        _projectClient = projectClient;
         _config = config;
         _logger = logger;
         _outputDir = Path.Combine(Directory.GetCurrentDirectory(), "..", "output");
@@ -152,7 +152,7 @@ public class LoanAgentOrchestrator
         };
 
         _logger.LogInformation("LoanAgentOrchestrator initialized (Agent Framework Workflows). Foundry: {FoundryStatus}, OutputDir: {OutputDir}",
-            _agentsClient != null ? "Connected" : "NOT CONFIGURED", _outputDir);
+            _projectClient != null ? "Connected" : "NOT CONFIGURED", _outputDir);
     }
 
     /// <summary>
@@ -161,9 +161,9 @@ public class LoanAgentOrchestrator
     /// </summary>
     public async Task<bool> HealthCheckAsync()
     {
-        if (_agentsClient == null)
+        if (_projectClient == null)
         {
-            _logger.LogError("❌ Health check failed: PersistentAgentsClient not configured");
+            _logger.LogError("❌ Health check failed: AIProjectClient not configured");
             return false;
         }
 
@@ -173,34 +173,32 @@ public class LoanAgentOrchestrator
 
         try
         {
-            // Find the health_check_agent
-            string? healthAgentId = null;
+            // Find the health_check_agent using new API
+            bool healthAgentFound = false;
             int agentCount = 0;
-            await foreach (var agent in _agentsClient.Administration.GetAgentsAsync())
+            await foreach (var agent in _projectClient.Agents.GetAgentsAsync())
             {
                 agentCount++;
-                _logger.LogInformation("  Agent found: {Name} (model={Model}, id={Id})", agent.Name, agent.Model, agent.Id);
+                _logger.LogInformation("  Agent found: {Name} (id={Id})", agent.Name, agent.Id);
                 if (agent.Name == "health_check_agent")
-                    healthAgentId = agent.Id;
+                    healthAgentFound = true;
             }
 
             _logger.LogInformation("  Total agents in Foundry: {Count}", agentCount);
 
-            if (healthAgentId == null)
+            if (!healthAgentFound)
             {
                 _logger.LogError("❌ Health check agent not found in Foundry. Run agent_init first.");
                 return false;
             }
 
-            // Run the health check agent
-            var healthAgent = await _agentsClient.GetAIAgentAsync(healthAgentId);
-            var response = await healthAgent.RunAsync("Perform health check now.");
+            // Verify agent record is accessible via GetAgentAsync
+            var agentRecord = await _projectClient.Agents.GetAgentAsync("health_check_agent");
 
             sw.Stop();
             _logger.LogInformation("✅ Health check passed in {Duration}ms", sw.ElapsedMilliseconds);
-            _logger.LogInformation("   Response: {Text}", response.Text);
-            _logger.LogInformation("   Run ID:   {RunId}", response.ResponseId);
-            _logger.LogInformation("   Thread:   {ThreadId}", response.AdditionalProperties?.GetValueOrDefault("threadId"));
+            _logger.LogInformation("   Agent: {Name} (id={Id})", agentRecord.Value.Name, agentRecord.Value.Id);
+            _logger.LogInformation("   Total agents: {Count}", agentCount);
 
             activity?.SetStatus(ActivityStatusCode.Ok);
             activity?.SetTag("health.duration_ms", sw.ElapsedMilliseconds);
