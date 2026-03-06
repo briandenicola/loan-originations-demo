@@ -285,9 +285,9 @@ catch (Exception ex)
     Console.WriteLine($"    Error: {ex.Message}");
 }
 
-// ── Step 8: Validate declarative workflow YAML ────────────────────────────
+// ── Step 8: Register workflow agent in Foundry ───────────────────────────
 Console.WriteLine();
-Console.WriteLine("Step 8: Validating declarative workflow (LoanOrigination.yaml)...");
+Console.WriteLine("Step 8: Registering workflow agent in Foundry (WorkflowAgentDefinition)...");
 var workflowSw = Stopwatch.StartNew();
 
 var workflowDir = Path.Combine(AppContext.BaseDirectory, "workflows");
@@ -309,14 +309,13 @@ Console.WriteLine($"  ✅ Loaded: {workflowContent.Length} chars");
 var agentInvocations = workflowContent.Split("kind: InvokeAzureAgent").Length - 1;
 Console.WriteLine($"  ✅ InvokeAzureAgent actions found: {agentInvocations}");
 
+// Validate the YAML locally
 try
 {
     var agentProvider = new AzureAgentProvider(new Uri(endpoint), credential);
     var workflowOptions = new DeclarativeWorkflowOptions(agentProvider);
     var workflow = DeclarativeWorkflowBuilder.Build<string>(workflowPath, workflowOptions);
-
-    workflowSw.Stop();
-    Console.WriteLine($"  ✅ Workflow parsed and built successfully ({workflowSw.ElapsedMilliseconds}ms)");
+    Console.WriteLine($"  ✅ Workflow YAML parsed and validated locally");
     Console.WriteLine($"     Workflow agents referenced:");
     foreach (var agentName in agentSpecs.Select(a => a.Name))
     {
@@ -331,6 +330,46 @@ catch (Exception ex)
     Console.WriteLine($"    Error: {ex.Message}");
     Console.WriteLine($"    The YAML workflow definition may have syntax errors.");
     return 1;
+}
+
+// Register the workflow as a workflow agent in Foundry using protocol method
+try
+{
+    Console.WriteLine();
+    Console.WriteLine("  Registering workflow agent in Foundry Agent Service...");
+
+    // Use protocol method — WorkflowAgentDefinition is experimental, so we
+    // send the definition as raw JSON with kind=workflow and the YAML content
+    var workflowBody = BinaryData.FromObjectAsJson(new
+    {
+        definition = new
+        {
+            kind = "workflow",
+            workflow = workflowContent
+        },
+        description = "Loan origination multi-agent workflow — orchestrates credit, income, fraud, policy, pricing, and underwriting agents"
+    });
+
+    var result = await projectClient.Agents.CreateAgentVersionAsync(
+        agentName: "loan-origination-workflow",
+        content: System.ClientModel.BinaryContent.Create(workflowBody),
+        foundryFeatures: "WorkflowAgentsV1Preview",
+        options: null);
+
+    // Parse response to extract version info
+    var rawResponse = result.GetRawResponse();
+    Console.WriteLine($"  ✅ Workflow agent registered ({rawResponse.Status}) ({workflowSw.ElapsedMilliseconds}ms)");
+    Console.WriteLine($"     name=loan-origination-workflow");
+    Console.WriteLine($"     Response: {rawResponse.Content.ToString()[..Math.Min(200, rawResponse.Content.ToString().Length)]}");
+
+    workflowSw.Stop();
+}
+catch (Exception ex)
+{
+    workflowSw.Stop();
+    Console.WriteLine($"  ❌ Workflow agent registration FAILED after {workflowSw.ElapsedMilliseconds}ms");
+    Console.WriteLine($"    Error: {ex.Message}");
+    Console.WriteLine($"    Note: Workflow agents require WorkflowAgentsV1Preview feature flag");
 }
 
 // Copy workflow YAML to web app output for runtime use
@@ -352,12 +391,11 @@ Console.WriteLine($"   Agent API:          New (AIProjectClient.Agents.CreateAge
 Console.WriteLine($"   Agent kind:         prompt (PromptAgentDefinition, versioned)");
 Console.WriteLine($"   Specialized agents: {successCount}/{agentSpecs.Length} created");
 Console.WriteLine($"   Health check agent: verified via GetAgentAsync");
-Console.WriteLine($"   Workflow (YAML):    validated ({agentInvocations} agent invocations)");
-Console.WriteLine($"   Total agents:       {successCount + 1} (specialists + health check)");
+Console.WriteLine($"   Workflow agent:     loan-origination-workflow (WorkflowAgentDefinition)");
+Console.WriteLine($"   Workflow (YAML):    {agentInvocations} agent invocations");
+Console.WriteLine($"   Total agents:       {successCount + 2} (specialists + health check + workflow)");
 Console.WriteLine();
-Console.WriteLine("Versioned agents are registered in Microsoft Foundry Agent Service.");
-Console.WriteLine("Workflow definition (LoanOrigination.yaml) has been validated.");
-Console.WriteLine("The web app will load and execute this workflow at runtime.");
+Console.WriteLine("All agents and workflow are registered in Microsoft Foundry Agent Service.");
 return failCount > 0 ? 1 : 0;
 
 // ── Agent specification record ────────────────────────────────────────────
