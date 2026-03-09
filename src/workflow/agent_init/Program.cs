@@ -34,9 +34,8 @@ Console.WriteLine($"   API:      AIProjectClient.Agents.CreateAgentVersionAsync 
 Console.WriteLine($"   Pattern:  Declarative YAML Workflow (LoanOrigination.yaml)");
 Console.WriteLine();
 Console.WriteLine("   Model Assignments:");
-Console.WriteLine("     gpt-4.1          → Credit Profile, Policy Evaluation, Health Check");
-Console.WriteLine("     gpt-5.2-chat     → Fraud Screening, Underwriting Recommendation");
-Console.WriteLine("     Phi-4-reasoning  → Income Verification, Pricing (structured reasoning)");
+Console.WriteLine("     gpt-4.1          → Orchestrator, Credit Profile, Policy Evaluation, Fraud Screening, Pricing");
+Console.WriteLine("     gpt-5            → Income Verification, Underwriting Recommendation");
 Console.WriteLine();
 
 // ── Step 1: Acquire Entra ID credential ───────────────────────────────────
@@ -168,19 +167,19 @@ var agentSpecs = new AgentSpec[]
         "CreditProfileAgentPrompt.txt", "gpt-4.1"),
 
     new("income-verification-agent", "Loan Origination Income Verification Agent",
-        "IncomeVerificationAgentPrompt.txt", "Phi-4-reasoning"),
+        "IncomeVerificationAgentPrompt.txt", "gpt-5"),
 
     new("fraud-screening-agent", "Loan Origination Fraud Screening Agent",
-        "FraudScreeningAgentPrompt.txt", "gpt-5.2-chat"),
+        "FraudScreeningAgentPrompt.txt", "gpt-4.1"),
 
     new("policy-evaluation-agent", "Loan Origination Policy Evaluation Agent",
         "PolicyEvaluationAgentPrompt.txt", "gpt-4.1"),
 
     new("pricing-agent", "Loan Origination Pricing Agent",
-        "PricingAgentPrompt.txt", "Phi-4-reasoning"),
+        "PricingAgentPrompt.txt", "gpt-5"),
 
     new("underwriting-recommendation-agent", "Loan Origination Underwriting Recommendation Agent",
-        "UnderwritingAgentPrompt.txt", "gpt-5.2-chat"),
+        "UnderwritingAgentPrompt.txt", "gpt-4.1"),
 };
 
 int successCount = 0;

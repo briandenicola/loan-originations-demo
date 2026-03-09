@@ -29,9 +29,8 @@ Console.WriteLine($"   Endpoint: {endpoint}");
 Console.WriteLine($"   Auth:     Entra ID (AzureCliCredential → EnvironmentCredential → ManagedIdentity)");
 Console.WriteLine();
 Console.WriteLine("   Model Assignments:");
-Console.WriteLine("     gpt-4.1          → Orchestrator, Credit Profile, Policy Evaluation");
-Console.WriteLine("     gpt-5.2-chat     → Fraud Screening, Underwriting Recommendation");
-Console.WriteLine("     Phi-4-reasoning  → Income Verification, Pricing (structured reasoning)");
+Console.WriteLine("     gpt-4.1          → Orchestrator, Credit Profile, Policy Evaluation, Fraud Screening, Pricing");
+Console.WriteLine("     gpt-5            → Income Verification, Underwriting Recommendation");
 Console.WriteLine();
 
 // ── Step 1: Acquire Entra ID credential ───────────────────────────────────
@@ -228,19 +227,19 @@ var specializedAgents = new AgentSpec[]
         "CreditProfileAgentPrompt.txt", [getCreditProfileTool], "gpt-4.1"),
 
     new("income_verification_agent", "Loan Origination Income Verification Agent",
-        "IncomeVerificationAgentPrompt.txt", [getIncomeVerificationTool], "Phi-4-reasoning"),
+        "IncomeVerificationAgentPrompt.txt", [getIncomeVerificationTool], "gpt-5"),
 
     new("fraud_screening_agent", "Loan Origination Fraud Screening Agent",
-        "FraudScreeningAgentPrompt.txt", [getFraudSignalsTool], "gpt-5.2-chat"),
+        "FraudScreeningAgentPrompt.txt", [getFraudSignalsTool], "gpt-4.1"),
 
     new("policy_evaluation_agent", "Loan Origination Policy Evaluation Agent",
         "PolicyEvaluationAgentPrompt.txt", [getPolicyThresholdsTool], "gpt-4.1"),
 
     new("pricing_agent", "Loan Origination Pricing Agent",
-        "PricingAgentPrompt.txt", [computeQuoteTool], "Phi-4-reasoning"),
+        "PricingAgentPrompt.txt", [computeQuoteTool], "gpt-5"),
 
     new("underwriting_recommendation_agent", "Loan Origination Underwriting Recommendation Agent",
-        "UnderwritingAgentPrompt.txt", [evaluateUnderwritingTool], "gpt-5.2-chat"),
+        "UnderwritingAgentPrompt.txt", [evaluateUnderwritingTool], "gpt-4.1"),
 };
 
 var createdAgents = new List<PersistentAgent>();

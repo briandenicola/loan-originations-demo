@@ -19,7 +19,7 @@ public class CsvDataService
 
     public CsvDataService(IConfiguration config)
     {
-        _dataDir = Path.Combine(Directory.GetCurrentDirectory(), "..", "materials", "data");
+        _dataDir = Path.Combine(Directory.GetCurrentDirectory(), "..", "..", "materials", "data");
         LoadAll();
     }
 

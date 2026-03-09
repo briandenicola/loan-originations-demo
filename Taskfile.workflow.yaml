@@ -2,7 +2,8 @@ version: "3"
 
 vars:
   ENDPOINT_POINT: FOUNDRY_NEXTGEN_ENDPOINT
-
+  APP_PORT: 8082
+  
 tasks:
   default:
     cmds:
@@ -15,7 +16,7 @@ tasks:
       - dotnet run -- --endpoint={{.FOUNDRY_ENDPOINT}}
     vars:
       FOUNDRY_ENDPOINT:
-        sh: terraform -chdir=../../infrastructure output -raw {{.ENDPOINT_POINT}}
+        sh: terraform -chdir=../../../infrastructure output -raw {{.ENDPOINT_POINT}}
 
   build:
     desc: Builds the .NET web application

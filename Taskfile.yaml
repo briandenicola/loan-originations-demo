@@ -6,7 +6,6 @@ dotenv:
 vars:
   TITLE: Loan Origination
   DEFAULT_REGION: eastus2
-  APP_PORT: 8081
 
 includes:
   workflow: 
