@@ -317,7 +317,7 @@ public class LoanAgentOrchestrator
         Workflow.WorkflowResult workflowResult;
         try
         {
-            workflowResult = await workflowRunner.ExecuteAsync(workflowPrompt);
+            workflowResult = await workflowRunner.ExecuteAsync(enrichedData);
         }
         catch (Exception ex)
         {
