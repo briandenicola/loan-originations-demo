@@ -229,8 +229,14 @@ scenario2/
 ├── Taskfile.yaml                  # Root task runner (up, down, init, apply)
 ├── Taskfile.classic.yaml          # Classic-specific tasks (classic:agents, classic:run, etc.)
 ├── Taskfile.workflow.yaml         # Workflow-specific tasks (workflow:agents, workflow:run, etc.)
+├── Taskfile.redteam.yaml          # Red team tasks (redteam:run, redteam:setup)
 │
 └── src/
+    ├── redteam/                   # ── Red Team Agent ──────────────────────
+    │   ├── run_redteam.py         # Cloud-based AI red teaming via Foundry Evals API
+    │   ├── requirements.txt       # azure-ai-projects, azure-identity
+    │   └── README.md              # Red team usage guide
+    │
     ├── classic/                   # ── Classic Implementation ──────────────
     │   ├── LoanOrigination.csproj
     │   ├── Program.cs             # PersistentAgentsClient + startup health check
@@ -374,6 +380,14 @@ On startup, the application runs a health check against the health check agent i
 | `task workflow:clean` | Clean build artifacts |
 | `task workflow:docker-build` | Build Docker container (tagged `loan-origination:workflow`) |
 | `task workflow:docker-run` | Run Docker container locally |
+
+### Red Team Tasks (`task redteam:*`)
+
+| Command | Description |
+|---------|-------------|
+| `task redteam:setup` | Create Python venv and install dependencies |
+| `task redteam:run` | Run AI red teaming against all specialist agents |
+| `task redteam:clean` | Remove virtual environment |
 
 ---
 

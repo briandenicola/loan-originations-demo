@@ -36,6 +36,10 @@ trigger:
       variable: Local.ApplicationData
       value: =System.LastMessage.Text
 
+    - kind: SendActivity
+      id: debug_input_data
+      activity: "[DEBUG] ApplicationData captured. First 200 chars: {Left(Local.ApplicationData, 200)}"
+
     # ── Define the specialist agent roster ──────────────────────────
     - kind: SetVariable
       id: set_specialist_roster
@@ -221,6 +225,10 @@ trigger:
     - kind: SendActivity
       id: notify_underwriting
       activity: "[Coordinator] Dispatching underwriting-recommendation-agent with compiled brief..."
+
+    - kind: SendActivity
+      id: debug_brief_size
+      activity: "[DEBUG] ComprehensiveBrief first 300 chars: {Left(Local.ComprehensiveBrief, 300)}"
 
     - kind: InvokeAzureAgent
       id: invoke_underwriting_agent

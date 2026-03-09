@@ -15,6 +15,10 @@ includes:
   classic: 
     taskfile: ./Taskfile.classic.yaml
     internal: false
+
+  redteam:
+    taskfile: ./Taskfile.redteam.yaml
+    internal: false
   
 tasks:
   default:
