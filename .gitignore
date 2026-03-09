@@ -70,3 +70,4 @@ Thumbs.db
 instructions.docx
 src/classic/appsettings.json
 src/workflow/appsettings.json
+src/redteam/__pycache__/
