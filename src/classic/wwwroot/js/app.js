@@ -119,13 +119,14 @@ async function runAgent() {
         `<div class="wf-step" id="step-${s.id}">
             <span class="wf-step-id">${s.id}</span>
             <span class="wf-step-name">${s.name}</span>
-            <span class="wf-step-detail">Waiting...</span>
+            <span class="wf-step-detail">Queued</span>
             <span class="wf-step-icon">⏳</span>
         </div>`
     ).join('');
 
-    // Animate steps one by one then call API
-    for (let i = 0; i < stepDefs.length - 1; i++) {
+    // Animate pre-processing steps (S01–S08)
+    const preProcessSteps = stepDefs.length - 2; // all except S09 (agent call) and S10 (review)
+    for (let i = 0; i < preProcessSteps; i++) {
         await delay(300);
         const el = document.getElementById(`step-${stepDefs[i].id}`);
         el.classList.add('running');
@@ -137,6 +138,12 @@ async function runAgent() {
         el.querySelector('.wf-step-icon').textContent = '✅';
         el.querySelector('.wf-step-detail').textContent = 'Complete';
     }
+
+    // Mark S09 as actively calling the AI agent workflow
+    const uwStep = document.getElementById('step-S09');
+    uwStep.classList.add('running');
+    uwStep.querySelector('.wf-step-icon').textContent = '🤖';
+    uwStep.querySelector('.wf-step-detail').textContent = 'AI Agent Workflow triggered — awaiting response...';
 
     // Actually call the agent API
     try {
@@ -151,10 +158,14 @@ async function runAgent() {
             const errMsg = errBody.message || errBody.error || `HTTP ${res.status}`;
             console.error('Agent API error:', res.status, errBody);
 
-            // Mark all remaining steps as failed
+            // Mark S09 and remaining steps as failed
+            uwStep.classList.remove('running');
+            uwStep.classList.add('error');
+            uwStep.querySelector('.wf-step-icon').textContent = '❌';
+            uwStep.querySelector('.wf-step-detail').textContent = 'AI Agent Workflow failed';
             stepDefs.forEach(s => {
                 const el = document.getElementById(`step-${s.id}`);
-                if (el && !el.classList.contains('complete')) {
+                if (el && !el.classList.contains('complete') && !el.classList.contains('error')) {
                     el.classList.add('error');
                     el.querySelector('.wf-step-icon').textContent = '❌';
                     el.querySelector('.wf-step-detail').textContent = 'Failed';
@@ -173,7 +184,19 @@ async function runAgent() {
 
         agentResult = await res.json();
 
-        // Update steps with real data
+        // Mark S09 as complete — agent workflow returned
+        uwStep.classList.remove('running');
+        uwStep.classList.add('complete');
+        uwStep.querySelector('.wf-step-icon').textContent = '✅';
+        uwStep.querySelector('.wf-step-detail').textContent = 'AI Agent Workflow complete — recommendation ready';
+
+        // Mark S10 as complete
+        const reviewStep = document.getElementById('step-S10');
+        reviewStep.classList.add('complete');
+        reviewStep.querySelector('.wf-step-icon').textContent = '✅';
+        reviewStep.querySelector('.wf-step-detail').textContent = 'Complete';
+
+        // Update steps with real data (overrides above if server provides detail)
         if (agentResult.workflowLog && agentResult.workflowLog.steps) {
             agentResult.workflowLog.steps.forEach(s => {
                 const el = document.getElementById(`step-${s.stepId}`);
