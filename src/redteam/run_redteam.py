@@ -18,6 +18,7 @@ from azure.ai.projects.models import (
     EvaluationTaxonomy,
     RiskCategory,
 )
+from azure.core.rest import HttpRequest
 from azure.identity import DefaultAzureCredential
 
 # ── Configuration ─────────────────────────────────────────────────────────────
@@ -40,6 +41,7 @@ AGENT_NAMES = os.environ.get("AGENT_NAMES", "").split(",") if os.environ.get("AG
 ATTACK_STRATEGIES = os.environ.get("ATTACK_STRATEGIES", "Flip,Base64,IndirectJailbreak").split(",")
 NUM_TURNS = int(os.environ.get("NUM_TURNS", "5"))
 MODEL_DEPLOYMENT = os.environ.get("MODEL_DEPLOYMENT_NAME", "gpt-4.1")
+API_VERSION = "2025-05-15-preview"
 
 OUTPUT_DIR = Path(__file__).resolve().parent.parent.parent / "output"
 OUTPUT_DIR.mkdir(exist_ok=True)
@@ -64,19 +66,24 @@ def banner():
 
 
 def resolve_agent_version(project_client: AIProjectClient, agent_name: str) -> str:
-    """Resolve the latest version string for a named agent."""
-    agents = list(project_client.agents.get_agents())
-    for agent in agents:
-        if agent.name == agent_name:
-            return getattr(agent, "version", "1.0")
-    raise ValueError(f"Agent '{agent_name}' not found in Foundry project")
+    """Resolve the latest version string for a named agent via REST."""
+    req = HttpRequest(
+        method="GET",
+        url=f"{PROJECT_ENDPOINT}/agents/{agent_name}?api-version={API_VERSION}",
+    )
+    resp = project_client.send_request(req)
+    if resp.status_code != 200:
+        raise ValueError(f"Agent '{agent_name}' not found (HTTP {resp.status_code})")
+    data = resp.json()
+    latest = data.get("versions", {}).get("latest", {})
+    return latest.get("version", "1")
 
 
-def create_red_team(client, agent_name: str) -> str:
+def create_red_team(project_client: AIProjectClient, agent_name: str):
     """Create a red team evaluation group with built-in safety evaluators."""
     print(f"  📋 Creating red team evaluation for '{agent_name}'...")
 
-    red_team = client.evals.create(
+    red_team = project_client.beta.red_teams.create(
         name=f"Red Team — {agent_name}",
         data_source_config={"type": "azure_ai_source", "scenario": "red_team"},
         testing_criteria=[
@@ -102,8 +109,9 @@ def create_red_team(client, agent_name: str) -> str:
         ],
     )
 
-    print(f"     Red team created: {red_team.id}")
-    return red_team.id
+    red_team_id = red_team.id if hasattr(red_team, "id") else red_team.get("id", str(red_team))
+    print(f"     Red team created: {red_team_id}")
+    return red_team_id
 
 
 def create_taxonomy(project_client: AIProjectClient, agent_name: str, agent_version: str) -> str:
@@ -123,17 +131,19 @@ def create_taxonomy(project_client: AIProjectClient, agent_name: str, agent_vers
         ),
     )
 
-    print(f"     Taxonomy created: {taxonomy.id}")
-    return taxonomy.id
+    taxonomy_id = taxonomy.id if hasattr(taxonomy, "id") else taxonomy.get("id", str(taxonomy))
+    print(f"     Taxonomy created: {taxonomy_id}")
+    return taxonomy_id
 
 
-def create_run(client, red_team_id: str, agent_name: str, agent_version: str, taxonomy_id: str) -> str:
-    """Create a red teaming run with attack strategies."""
+def create_run(project_client: AIProjectClient, red_team_id: str, agent_name: str, agent_version: str, taxonomy_id: str) -> str:
+    """Create a red teaming run with attack strategies via OpenAI evals API."""
     print(f"  🚀 Starting red team run for '{agent_name}'...")
     print(f"     Attacks: {', '.join(ATTACK_STRATEGIES)}")
     print(f"     Turns:   {NUM_TURNS}")
 
     target = AzureAIAgentTarget(name=agent_name, version=agent_version)
+    client = project_client.get_openai_client()
 
     eval_run = client.evals.runs.create(
         eval_id=red_team_id,
@@ -150,33 +160,38 @@ def create_run(client, red_team_id: str, agent_name: str, agent_version: str, ta
         },
     )
 
-    print(f"     Run created: {eval_run.id} (status: {eval_run.status})")
-    return eval_run.id
+    run_id = eval_run.id if hasattr(eval_run, "id") else eval_run.get("id", str(eval_run))
+    status = getattr(eval_run, "status", "unknown")
+    print(f"     Run created: {run_id} (status: {status})")
+    return run_id
 
 
-def poll_run(client, red_team_id: str, run_id: str) -> str:
+def poll_run(project_client: AIProjectClient, red_team_id: str, run_id: str) -> str:
     """Poll until the run completes, fails, or times out."""
     print(f"  ⏳ Polling run {run_id}...")
+    client = project_client.get_openai_client()
     start = time.monotonic()
 
     while True:
         run = client.evals.runs.retrieve(run_id=run_id, eval_id=red_team_id)
+        status = getattr(run, "status", "unknown")
         elapsed = int(time.monotonic() - start)
-        print(f"     [{elapsed:>4}s] Status: {run.status}")
+        print(f"     [{elapsed:>4}s] Status: {status}")
 
-        if run.status in ("completed", "failed", "canceled"):
-            return run.status
+        if status in ("completed", "failed", "canceled"):
+            return status
 
         if elapsed > POLL_TIMEOUT_SECONDS:
-            print(f"  ⚠️  Timeout after {POLL_TIMEOUT_SECONDS}s — run still {run.status}")
-            return run.status
+            print(f"  ⚠️  Timeout after {POLL_TIMEOUT_SECONDS}s — run still {status}")
+            return status
 
         time.sleep(POLL_INTERVAL_SECONDS)
 
 
-def fetch_results(client, red_team_id: str, run_id: str, agent_name: str) -> list:
+def fetch_results(project_client: AIProjectClient, red_team_id: str, run_id: str, agent_name: str) -> list:
     """Fetch and save output items from a completed run."""
     print(f"  📥 Fetching results for '{agent_name}'...")
+    client = project_client.get_openai_client()
     items = list(client.evals.runs.output_items.list(run_id=run_id, eval_id=red_team_id))
 
     output_path = OUTPUT_DIR / f"redteam_eval_output_items_{agent_name}.json"
@@ -191,6 +206,8 @@ def _to_serializable(obj):
     """Convert SDK objects to JSON-serializable form."""
     if hasattr(obj, "as_dict"):
         return obj.as_dict()
+    if hasattr(obj, "model_dump"):
+        return obj.model_dump()
     if isinstance(obj, list):
         return [_to_serializable(i) for i in obj]
     if isinstance(obj, dict):
@@ -214,23 +231,22 @@ def run_redteam_for_agent(project_client: AIProjectClient, agent_name: str) -> d
     try:
         agent_version = resolve_agent_version(project_client, agent_name)
         result["agent_version"] = agent_version
+        print(f"  📌 Resolved version: {agent_version}")
 
-        client = project_client.get_openai_client()
-
-        red_team_id = create_red_team(client, agent_name)
+        red_team_id = create_red_team(project_client, agent_name)
         result["red_team_id"] = red_team_id
 
         taxonomy_id = create_taxonomy(project_client, agent_name, agent_version)
         result["taxonomy_id"] = taxonomy_id
 
-        run_id = create_run(client, red_team_id, agent_name, agent_version, taxonomy_id)
+        run_id = create_run(project_client, red_team_id, agent_name, agent_version, taxonomy_id)
         result["run_id"] = run_id
 
-        status = poll_run(client, red_team_id, run_id)
+        status = poll_run(project_client, red_team_id, run_id)
         result["status"] = status
 
         if status == "completed":
-            items = fetch_results(client, red_team_id, run_id, agent_name)
+            items = fetch_results(project_client, red_team_id, run_id, agent_name)
             result["output_items_count"] = len(items)
         else:
             print(f"  ❌ Run ended with status: {status}")
