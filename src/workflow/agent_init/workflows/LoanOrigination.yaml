@@ -2,12 +2,14 @@
 # Loan Origination Underwriting Workflow
 # Microsoft Agent Framework — Declarative Workflow (YAML)
 #
-# This workflow coordinates specialist AI agents in sequence to analyze
-# a loan application and produce an underwriting recommendation.
-#
-# Context sharing: All agents share a SINGLE conversation (Foundry thread).
-# Each agent's response is visible to all subsequent agents in the conversation
-# history, following the sequential message-list pattern from the Agent Framework.
+# Coordinator Pattern (inspired by DeepResearch.yaml):
+#   The workflow YAML acts as the centralized coordinator.
+#   1. Dispatches each specialist agent with the application data
+#   2. Captures each agent's output into a named variable
+#   3. Compiles ALL specialist outputs into a comprehensive brief
+#      using SetTextVariable + MessageText() (the proven pattern)
+#   4. Passes the compiled brief to the underwriting agent on a
+#      FRESH conversation — no reliance on shared thread history
 #
 # Agents (created by agent_init):
 #   - credit-profile-agent        (gpt-4.1)
@@ -34,112 +36,204 @@ trigger:
       variable: Local.ApplicationData
       value: =System.LastMessage.Text
 
-    # ── Create a shared conversation for all agents ─────────────────
-    # All specialist agents share this conversation so each subsequent
-    # agent can see the analyses from prior agents in the thread history.
+    # ── Define the specialist agent roster ──────────────────────────
+    - kind: SetVariable
+      id: set_specialist_roster
+      displayName: Define specialist agent roster
+      variable: Local.SpecialistRoster
+      value: |-
+        =[
+          { name: "credit-profile-agent",       role: "Credit Profile Analyst" },
+          { name: "income-verification-agent",  role: "Income Verification Specialist" },
+          { name: "fraud-screening-agent",      role: "Fraud Screening Analyst" },
+          { name: "policy-evaluation-agent",    role: "Policy Evaluation Officer" },
+          { name: "pricing-agent",              role: "Pricing Analyst" }
+        ]
+
+    - kind: SetVariable
+      id: set_team_description
+      displayName: Build team description for prompts
+      variable: Local.TeamDescription
+      value: "=Concat(ForAll(Local.SpecialistRoster, $\"- \" & name & $\": \" & role), Value, \"\n\")"
+
+    # ── Create separate conversations ───────────────────────────────
+    # Specialist conversation: shared among the 5 specialist agents
+    # Underwriting conversation: fresh context for the final decision
     - kind: CreateConversation
-      id: shared_conversation
-      conversationId: Local.SharedConversationId
+      id: specialist_conversation
+      conversationId: Local.SpecialistConversationId
+
+    - kind: CreateConversation
+      id: underwriting_conversation
+      conversationId: Local.UnderwritingConversationId
+
+    # ══════════════════════════════════════════════════════════════════
+    # PHASE 1: Dispatch specialist agents and capture outputs
+    # ══════════════════════════════════════════════════════════════════
 
     # ── S03: Credit Profile Analysis ────────────────────────────────
     - kind: SendActivity
       id: notify_credit
-      activity: "S03: Analyzing credit profile..."
+      activity: "[Coordinator] Dispatching credit-profile-agent..."
 
     - kind: InvokeAzureAgent
       id: invoke_credit_agent
       displayName: Credit Profile Analysis
-      conversationId: =Local.SharedConversationId
+      conversationId: =Local.SpecialistConversationId
       agent:
         name: credit-profile-agent
       input:
-        messages: =UserMessage("Analyze the credit profile data in the following loan application and provide a risk assessment.\n\nENRICHED APPLICATION DATA:\n" & Local.ApplicationData)
+        messages: =UserMessage("Analyze the credit profile data in this loan application. Provide a structured risk assessment covering bureau score, delinquencies, utilization, and credit age.\n\nAPPLICATION DATA:\n" & Local.ApplicationData)
       output:
         messages: Local.CreditAnalysis
 
     # ── S04: Income Verification Analysis ───────────────────────────
     - kind: SendActivity
       id: notify_income
-      activity: "S04: Verifying income..."
+      activity: "[Coordinator] Dispatching income-verification-agent..."
 
     - kind: InvokeAzureAgent
       id: invoke_income_agent
       displayName: Income Verification Analysis
-      conversationId: =Local.SharedConversationId
+      conversationId: =Local.SpecialistConversationId
       agent:
         name: income-verification-agent
       input:
-        messages: =UserMessage("Analyze the income verification data in the following loan application. Assess verification confidence and affordability.\n\nENRICHED APPLICATION DATA:\n" & Local.ApplicationData)
+        messages: =UserMessage("Verify the income data in this loan application. Assess verification confidence, employer match, income stability, and affordability.\n\nAPPLICATION DATA:\n" & Local.ApplicationData)
       output:
         messages: Local.IncomeAnalysis
 
     # ── S05: Fraud Screening ────────────────────────────────────────
     - kind: SendActivity
       id: notify_fraud
-      activity: "S05: Screening for fraud signals..."
+      activity: "[Coordinator] Dispatching fraud-screening-agent..."
 
     - kind: InvokeAzureAgent
       id: invoke_fraud_agent
       displayName: Fraud Screening
-      conversationId: =Local.SharedConversationId
+      conversationId: =Local.SpecialistConversationId
       agent:
         name: fraud-screening-agent
       input:
-        messages: =UserMessage("Analyze the fraud signals in the following loan application. Classify the fraud risk level and provide a recommendation.\n\nENRICHED APPLICATION DATA:\n" & Local.ApplicationData)
+        messages: =UserMessage("Screen this loan application for fraud signals. Classify the fraud risk level, check identity verification, device signals, and watchlist matches.\n\nAPPLICATION DATA:\n" & Local.ApplicationData)
       output:
         messages: Local.FraudAnalysis
 
     # ── S06: Policy Evaluation ──────────────────────────────────────
     - kind: SendActivity
       id: notify_policy
-      activity: "S06: Evaluating policy rules..."
+      activity: "[Coordinator] Dispatching policy-evaluation-agent..."
 
     - kind: InvokeAzureAgent
       id: invoke_policy_agent
       displayName: Policy Evaluation
-      conversationId: =Local.SharedConversationId
+      conversationId: =Local.SpecialistConversationId
       agent:
         name: policy-evaluation-agent
       input:
-        messages: =UserMessage("Evaluate the following loan application against all underwriting policy rules (POL-001 through POL-010). Provide per-rule assessment.\n\nENRICHED APPLICATION DATA:\n" & Local.ApplicationData)
+        messages: =UserMessage("Evaluate this loan application against all underwriting policy rules POL-001 through POL-010. Provide per-rule PASS/FAIL assessment with reasoning.\n\nAPPLICATION DATA:\n" & Local.ApplicationData)
       output:
         messages: Local.PolicyAnalysis
 
     # ── S08: Pricing Analysis ───────────────────────────────────────
     - kind: SendActivity
       id: notify_pricing
-      activity: "S08: Computing pricing..."
+      activity: "[Coordinator] Dispatching pricing-agent..."
 
     - kind: InvokeAzureAgent
       id: invoke_pricing_agent
       displayName: Pricing Analysis
-      conversationId: =Local.SharedConversationId
+      conversationId: =Local.SpecialistConversationId
       agent:
         name: pricing-agent
       input:
-        messages: =UserMessage("Review the pricing data in the following loan application. Validate the risk tier, APR, and monthly payment calculations.\n\nENRICHED APPLICATION DATA:\n" & Local.ApplicationData)
+        messages: =UserMessage("Review the pricing data in this loan application. Validate the risk tier assignment, quoted APR, and monthly payment calculations.\n\nAPPLICATION DATA:\n" & Local.ApplicationData)
       output:
         messages: Local.PricingAnalysis
 
-    # ── S09: Underwriting Recommendation ────────────────────────────
-    # This agent shares the same conversation as all specialists above,
-    # so it can see their full analyses in the conversation history.
+    # ══════════════════════════════════════════════════════════════════
+    # PHASE 2: Compile comprehensive brief from all specialist outputs
+    # ══════════════════════════════════════════════════════════════════
+
+    - kind: SendActivity
+      id: notify_compiling
+      activity: "[Coordinator] All 5 specialists complete. Compiling comprehensive brief for underwriter..."
+
+    - kind: SetTextVariable
+      id: compile_brief
+      displayName: Compile comprehensive underwriting brief
+      variable: Local.ComprehensiveBrief
+      value: |-
+        You are the final underwriting recommendation agent. Below is the ORIGINAL APPLICATION DATA followed by the COMPLETE ANALYSIS from each of the 5 specialist agents. Use ALL of this information to produce your final underwriting recommendation.
+
+        SPECIALIST TEAM:
+        {Local.TeamDescription}
+
+        ═══════════════════════════════════════════
+        SECTION 1: ORIGINAL APPLICATION DATA
+        ═══════════════════════════════════════════
+        {Local.ApplicationData}
+
+        ═══════════════════════════════════════════
+        SECTION 2: CREDIT PROFILE ANALYSIS
+        (from credit-profile-agent)
+        ═══════════════════════════════════════════
+        {MessageText(Local.CreditAnalysis)}
+
+        ═══════════════════════════════════════════
+        SECTION 3: INCOME VERIFICATION ANALYSIS
+        (from income-verification-agent)
+        ═══════════════════════════════════════════
+        {MessageText(Local.IncomeAnalysis)}
+
+        ═══════════════════════════════════════════
+        SECTION 4: FRAUD SCREENING ANALYSIS
+        (from fraud-screening-agent)
+        ═══════════════════════════════════════════
+        {MessageText(Local.FraudAnalysis)}
+
+        ═══════════════════════════════════════════
+        SECTION 5: POLICY EVALUATION
+        (from policy-evaluation-agent)
+        ═══════════════════════════════════════════
+        {MessageText(Local.PolicyAnalysis)}
+
+        ═══════════════════════════════════════════
+        SECTION 6: PRICING ANALYSIS
+        (from pricing-agent)
+        ═══════════════════════════════════════════
+        {MessageText(Local.PricingAnalysis)}
+
+        ═══════════════════════════════════════════
+        YOUR TASK — FINAL UNDERWRITING RECOMMENDATION
+        ═══════════════════════════════════════════
+        Based on ALL of the above specialist analyses and the original application data, produce your FINAL UNDERWRITING RECOMMENDATION including:
+        1. Recommendation status: APPROVE, CONDITIONAL, or DECLINE
+        2. Confidence score (0.0 to 1.0)
+        3. Key risk factors and mitigating factors
+        4. Conditions (if CONDITIONAL)
+        5. Professional rationale summary for a human reviewer
+
+    # ══════════════════════════════════════════════════════════════════
+    # PHASE 3: Final underwriting recommendation on a FRESH conversation
+    # ══════════════════════════════════════════════════════════════════
+
     - kind: SendActivity
       id: notify_underwriting
-      activity: "S09: Generating underwriting recommendation..."
+      activity: "[Coordinator] Dispatching underwriting-recommendation-agent with compiled brief..."
 
     - kind: InvokeAzureAgent
       id: invoke_underwriting_agent
       displayName: Final Underwriting Recommendation
-      conversationId: =Local.SharedConversationId
+      conversationId: =Local.UnderwritingConversationId
       agent:
         name: underwriting-recommendation-agent
       input:
-        messages: =UserMessage("You have access to the full conversation history above containing analyses from the credit-profile-agent, income-verification-agent, fraud-screening-agent, policy-evaluation-agent, and pricing-agent. Based on ALL of these specialist analyses and the original application data, produce your final underwriting recommendation with APPROVE/CONDITIONAL/DECLINE status, confidence score, key factors, and professional rationale for a human reviewer.\n\nORIGINAL APPLICATION DATA:\n" & Local.ApplicationData)
+        messages: =UserMessage(Local.ComprehensiveBrief)
       output:
         autoSend: true
         messages: Local.UnderwritingRecommendation
 
-    # ── S10: Complete ───────────────────────────────────────────────
+    # ── Complete ────────────────────────────────────────────────────
     - kind: EndWorkflow
       id: workflow_complete
