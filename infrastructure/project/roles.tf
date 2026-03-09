@@ -2,8 +2,9 @@
 data "azurerm_client_config" "current" {}
 
 locals {
-  role_principals = {
-    logged_in_user    = {
+  # User principals get all roles including Project Manager
+  user_principals = {
+    logged_in_user = {
       id             = data.azurerm_client_config.current.object_id
       principal_type = "User"
     }
@@ -11,15 +12,21 @@ locals {
       id             = var.application_owner_object_id
       principal_type = "User"
     }
-    app_spn           = {
+  }
+
+  # SPN principals cannot be assigned Project Manager role
+  spn_principals = {
+    app_spn = {
       id             = var.app_service_principal_object_id
       principal_type = "ServicePrincipal"
     }
   }
+
+  all_principals = merge(local.user_principals, local.spn_principals)
 }
 
 resource "azurerm_role_assignment" "ai_foundry_developer" {
-  for_each = local.role_principals
+  for_each = local.all_principals
   depends_on = [
     azurerm_resource_group.this
   ]
@@ -30,7 +37,7 @@ resource "azurerm_role_assignment" "ai_foundry_developer" {
 }
 
 resource "azurerm_role_assignment" "ai_foundry_project_manager" {
-  for_each = local.role_principals
+  for_each = local.user_principals
   depends_on = [
     azurerm_resource_group.this
   ]
@@ -41,7 +48,7 @@ resource "azurerm_role_assignment" "ai_foundry_project_manager" {
 }
 
 resource "azurerm_role_assignment" "cognitive_services_openai_user" {
-  for_each = local.role_principals
+  for_each = local.all_principals
   depends_on = [
     azapi_resource.ai_foundry_project
   ]
@@ -52,7 +59,7 @@ resource "azurerm_role_assignment" "cognitive_services_openai_user" {
 }
 
 resource "azurerm_role_assignment" "cognitive_services_openai_contributor" {
-  for_each = local.role_principals
+  for_each = local.all_principals
   depends_on = [
     azapi_resource.ai_foundry_project
   ]
