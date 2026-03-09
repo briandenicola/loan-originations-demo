@@ -18,3 +18,7 @@ variable "foundry_project" {
     }))
   })
 }
+
+variable "application_owner_object_id" {
+  description = "The SPN that will deploy the agents and workflows"
+}

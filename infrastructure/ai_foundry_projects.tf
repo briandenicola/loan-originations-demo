@@ -5,6 +5,8 @@ module "project_classic" {
   ]
   source   = "./project"
 
+  application_owner_object_id = var.app_service_principal_object_id
+
   foundry_project = {
     name          = "${local.project_name}-classic"
     location      = local.location
@@ -32,9 +34,11 @@ module "project_classic" {
 module "project_workflow" {
   depends_on = [
     azapi_resource.ai_foundry,
-    module.project_1
+    module.project_classic
   ]
   source   = "./project"
+
+  application_owner_object_id = var.app_service_principal_object_id
 
   foundry_project = {
     name          = "${local.project_name}-workflow"
