@@ -628,8 +628,10 @@ public class LoanAgentOrchestrator
 
     private async Task WriteJson(string filename, object data)
     {
-        var path = Path.Combine(_outputDir, filename);
+        var stamp = DateTime.UtcNow.ToString("yyyyMMdd-HHmmss");
+        var stamped = Path.GetFileNameWithoutExtension(filename) + $"_{stamp}.json";
+        var path = Path.Combine(_outputDir, stamped);
         await File.WriteAllTextAsync(path, JsonSerializer.Serialize(data, _jsonOpts));
-        _logger.LogDebug("Wrote output file: {Filename} ({Size} bytes)", filename, new FileInfo(path).Length);
+        _logger.LogDebug("Wrote output file: {Filename} ({Size} bytes)", stamped, new FileInfo(path).Length);
     }
 }
