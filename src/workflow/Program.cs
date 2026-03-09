@@ -123,7 +123,7 @@ if (!string.IsNullOrEmpty(foundryEndpoint))
         tokenProvider: credential);
     builder.Services.AddSingleton(projectClient);
     Console.WriteLine($"✅ Microsoft Agent Framework configured: {foundryEndpoint}");
-    Console.WriteLine($"   Workflow:  Declarative YAML (LoanOrigination.yaml)");
+    Console.WriteLine($"   Workflow:  Code-Based Coordinator (sequential agent calls via AIProjectClient)");
     Console.WriteLine("   Auth chain: ManagedIdentity → EnvironmentCredential → AzureCliCredential");
 }
 else

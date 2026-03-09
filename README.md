@@ -2,12 +2,12 @@
 
 **Microsoft Agent Framework + Azure AI Foundry — Automated Underwriting with Multi-Agent Orchestration**
 
-A reference architecture showcasing Microsoft's Agent Framework and Azure AI Foundry Agent Service for automated loan underwriting. The project provides **two parallel implementations** demonstrating the evolution of agent orchestration patterns:
+A reference architecture showcasing Microsoft's Agent Framework and Azure AI Foundry Agent Service for automated loan underwriting. The project provides **two parallel implementations** demonstrating different agent orchestration patterns:
 
 | Implementation | Directory | Orchestration Pattern | SDK |
 |---|---|---|---|
 | **Classic** | `src/classic/` | Agentic — LLM-driven via ConnectedAgentTools | `PersistentAgentsClient` (legacy) |
-| **Workflow** | `src/workflow/` | Declarative YAML — deterministic YAML-defined flow | `AIProjectClient` (new versioned API) |
+| **Workflow** | `src/workflow/` | Code-Based Coordinator — deterministic sequential agent calls | `AIProjectClient` (new versioned API) |
 
 Both implementations share the same frontend, data layer, and six specialist AI agents. They differ in **how** the agents are orchestrated.
 
@@ -38,8 +38,8 @@ Both implementations share the same frontend, data layer, and six specialist AI 
 │  │   └───────────────────────────────────────────────────┘    │  │
 │  │                        OR                                  │  │
 │  │   ┌─ Workflow ────────────────────────────────────────┐    │  │
-│  │   │  LoanOrigination.yaml (Declarative YAML)          │    │  │
-│  │   │  DeclarativeWorkflowBuilder → 6 InvokeAzureAgent  │    │  │
+│  │   │  Code-Based Coordinator (C#)                      │    │  │
+│  │   │  AIProjectClient → 5 specialists → underwriter    │    │  │
 │  │   └───────────────────────────────────────────────────┘    │  │
 │  │                                                            │  │
 │  │    credit-profile-agent         (gpt-4.1)                  │  │
@@ -71,41 +71,24 @@ The classic implementation uses a `loan_orchestrator` agent that receives all si
 - **Agent naming**: `credit_profile_agent` (underscores)
 - **Foundry endpoint**: `FOUNDRY_ENDPOINT`
 
-### Workflow (Declarative YAML Orchestration)
+### Workflow (Code-Based Coordinator)
 
-The workflow implementation uses a **declarative YAML file** (`LoanOrigination.yaml`) to define the exact agent execution sequence. No orchestrator LLM — the workflow engine controls the flow deterministically.
+The workflow implementation uses a **code-based coordinator** that calls each specialist agent individually via `AIProjectClient`, gathers their responses, compiles a comprehensive brief, and sends it to the underwriting agent for the final recommendation. This guarantees deterministic execution order while ensuring full context is passed to the underwriter.
 
 - **SDK**: `Azure.AI.Projects` 2.0.0-beta.1 (`AIProjectClient`, `PromptAgentDefinition`)
 - **Agent creation**: `CreateAgentVersionAsync(agentName, AgentVersionCreationOptions)` — versioned agents
-- **Orchestration**: YAML-driven — `DeclarativeWorkflowBuilder` + `InProcessExecution`
-- **Agents**: 6 specialists + 1 health check + 1 workflow agent = **8 agents**
+- **Orchestration**: Code-based coordinator in `LoanAgentOrchestrator.RunWorkflowAsync()`
+  1. Resolves all agents from Foundry via `GetAgentsAsync()`
+  2. Calls 5 specialist agents sequentially, each receiving full enriched application data
+  3. Compiles all specialist responses into a comprehensive brief (~16K chars)
+  4. Sends the compiled brief to the underwriting-recommendation-agent
+  5. Returns a fully-informed APPROVE / CONDITIONAL / DECLINE recommendation
+- **Agents**: 6 specialists + 1 health check = **7 agents**
 - **Agent naming**: `credit-profile-agent` (hyphens — required by new API)
-- **Workflow registration**: `WorkflowAgentDefinition` with `Foundry-Features: WorkflowAgents=V1Preview` header
 - **Foundry endpoint**: `FOUNDRY_NEXTGEN_ENDPOINT`
+- **Observability**: OpenTelemetry traces + metrics to Application Insights and console
 
-### Declarative YAML Workflow
-
-The workflow is defined in `src/workflow/agent_init/workflows/LoanOrigination.yaml`:
-
-```yaml
-kind: Workflow
-maxTurns: 50
-trigger:
-  kind: OnConversationStart
-  id: loan_underwriting_workflow
-  actions:
-    - kind: SetVariable           # Capture enriched application data
-    - kind: InvokeAzureAgent      # credit-profile-agent
-    - kind: InvokeAzureAgent      # income-verification-agent
-    - kind: InvokeAzureAgent      # fraud-screening-agent
-    - kind: InvokeAzureAgent      # policy-evaluation-agent
-    - kind: InvokeAzureAgent      # pricing-agent
-    - kind: SetTextVariable       # Combine all specialist analyses
-    - kind: InvokeAzureAgent      # underwriting-recommendation-agent
-    - kind: EndWorkflow
-```
-
-At runtime, `LoanWorkflowRunner` loads the YAML via `DeclarativeWorkflowBuilder.Build<string>()` with an `AzureAgentProvider` that resolves agents by name from Foundry. Each agent receives enriched application data. The final `underwriting-recommendation-agent` receives all combined analyses and produces the recommendation.
+> **Note**: The repository also contains a declarative YAML workflow definition (`LoanOrigination.yaml`) which served as an earlier approach. It is preserved for reference but is not used at runtime — the code-based coordinator replaced it because the YAML workflow engine does not reliably propagate specialist agent outputs via `MessageText()` variables.
 
 ---
 
@@ -266,24 +249,24 @@ scenario2/
     │
     └── workflow/                  # ── Workflow Implementation ─────────────
         ├── LoanOrigination.csproj
-        ├── Program.cs             # AIProjectClient + startup health check
-        ├── appsettings.json       # WorkflowPattern: DeclarativeYaml
+        ├── Program.cs             # AIProjectClient + OpenTelemetry + startup health check
+        ├── appsettings.json       # Foundry endpoint, AppInsights connection string
         ├── Dockerfile
         ├── Agent/
-        │   ├── LoanAgentOrchestrator.cs   # YAML workflow orchestration
+        │   ├── LoanAgentOrchestrator.cs   # ★ Code-based coordinator workflow
         │   └── Workflow/
-        │       ├── LoanOrigination.yaml   # ★ Declarative YAML workflow definition
-        │       └── LoanWorkflowRunner.cs  # DeclarativeWorkflowBuilder + InProcessExecution
+        │       ├── LoanOrigination.yaml   # Declarative YAML workflow (preserved, not used at runtime)
+        │       └── LoanWorkflowRunner.cs  # YAML workflow runner (preserved, not used at runtime)
         ├── Controllers/
         ├── Models/
         ├── Services/
         ├── wwwroot/               # SPA frontend
         └── agent_init/            # Workflow agent initializer
             ├── LoanOrigination.AgentInit.csproj
-            ├── Program.cs         # Creates 8 agents (6 + health check + workflow)
+            ├── Program.cs         # Creates 7 agents (6 specialists + health check)
             ├── prompts/           # System prompts (7 files)
             └── workflows/
-                └── LoanOrigination.yaml  # YAML template for workflow registration
+                └── LoanOrigination.yaml  # YAML template (preserved for reference)
 ```
 
 ---
@@ -431,8 +414,8 @@ The workflow produces four JSON files in the `output/` directory:
     "Endpoint": "https://<resource>.services.ai.azure.com/api/projects/<project>",
     "DeploymentName": "gpt-4.1"
   },
-  "Foundry": {
-    "WorkflowPattern": "DeclarativeYaml"
+  "ApplicationInsights": {
+    "ConnectionString": "InstrumentationKey=...;IngestionEndpoint=..."
   }
 }
 ```
@@ -464,12 +447,44 @@ The workflow produces four JSON files in the `output/` directory:
 | Package | Version | Purpose |
 |---------|---------|---------|
 | `Azure.AI.Projects` | 2.0.0-beta.1 | New agent API — `AIProjectClient`, `CreateAgentVersionAsync` |
-| `Azure.AI.Projects.OpenAI` | 2.0.0-beta.1 | `PromptAgentDefinition`, `WorkflowAgentDefinition` |
-| `Microsoft.Agents.AI.Workflows` | 1.0.0-rc3 | Workflow engine — `InProcessExecution` |
-| `Microsoft.Agents.AI.Workflows.Declarative` | 1.0.0-rc3 | Declarative YAML — `DeclarativeWorkflowBuilder.Build<T>()` |
-| `Microsoft.Agents.AI.Workflows.Declarative.AzureAI` | 1.0.0-rc3 | `AzureAgentProvider` for Foundry agent resolution |
+| `Azure.AI.Projects.OpenAI` | 2.0.0-beta.1 | `PromptAgentDefinition`, `GetAIAgentAsync` extension |
 | `Azure.Identity` | 1.18.0 | Entra ID authentication |
+| `Azure.Monitor.OpenTelemetry.Exporter` | 1.4.0 | Application Insights exporter for traces, metrics, logs |
+| `OpenTelemetry.Extensions.Hosting` | | OpenTelemetry SDK integration |
 | `CsvHelper` | 33.0.1 | CSV data file parsing |
+
+---
+
+## Observability
+
+Both implementations emit structured traces, metrics, and logs via **OpenTelemetry**, exported to both the console and **Azure Application Insights**.
+
+### Traces
+
+Each workflow run produces distributed traces with spans for:
+- `RunWorkflow` — top-level span covering the full S01–S10 pipeline
+- `InvokeAgent_{StepId}` — per-agent call spans (S03–S09) with tags for agent name, response length, and call duration
+- HTTP spans for outbound Foundry API calls
+
+### Metrics
+
+| Metric | Type | Description |
+|--------|------|-------------|
+| `loan.workflow.duration_ms` | Histogram | End-to-end workflow duration per application |
+| `loan.workflow.agent_errors` | Counter | Agent call failures |
+
+### Configuration
+
+Observability is configured in `Program.cs` via the OpenTelemetry SDK:
+
+```csharp
+builder.Services.AddOpenTelemetry()
+    .ConfigureResource(r => r.AddService("LoanOrigination.Workflow"))
+    .WithTracing(t => t.AddSource("LoanOrigination").AddAspNetCoreInstrumentation()...)
+    .WithMetrics(m => m.AddMeter("LoanOrigination").AddAspNetCoreInstrumentation()...);
+```
+
+When `ApplicationInsights:ConnectionString` is configured, traces/metrics/logs are exported to Application Insights. Console export is always active.
 
 ---
 
