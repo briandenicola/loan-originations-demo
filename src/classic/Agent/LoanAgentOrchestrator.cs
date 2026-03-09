@@ -433,16 +433,28 @@ public class LoanAgentOrchestrator
             var orchestratorAgent = await _agentsClient!.GetAIAgentAsync(orchestratorAgentId);
             _logger.LogDebug("[{RunId}] AIAgent resolved from Foundry. Calling RunAsync...", runId);
 
-            // Create a prompt for the orchestrator to analyze and produce a recommendation
+            // Create a prompt for the orchestrator to execute the full loan approval workflow
             agentPrompt =
-                $"Analyze this loan application and produce a comprehensive underwriting assessment.\n\n" +
+                $"You are the Loan Orchestrator Agent for a loan origination workflow. Execute the following steps " +
+                $"using the enriched application data provided below.\n\n" +
                 $"ENRICHED APPLICATION DATA:\n{enrichedContext}\n\n" +
-                $"Based on the data above:\n" +
-                $"1. Summarize the applicant's risk profile\n" +
-                $"2. Explain the recommendation: {rec.RecommendationStatus} (confidence: {rec.ConfidenceScore:F2})\n" +
-                $"3. Address key risk factors and borrower strengths\n" +
-                $"4. Note any conditions or flags requiring human attention\n" +
-                $"5. Provide a clear, professional rationale for the human reviewer";
+                $"WORKFLOW STEPS TO EXECUTE:\n" +
+                $"S01 — Application Intake: Confirm receipt of application {applicationNo} and validate all required fields are present.\n" +
+                $"S02 — Data Enrichment: Verify that all supporting data has been gathered (credit profile, income verification, fraud signals, policy thresholds, pricing).\n" +
+                $"S03 — Credit Profile Analysis (credit_profile_agent): Analyze the bureau score ({credit?.BureauScore}, band: {credit?.ScoreBand}), delinquency history, utilization, and tradeline depth. Summarize credit risk.\n" +
+                $"S04 — Income Verification (income_verification_agent): Evaluate verified monthly income (${income?.VerifiedMonthlyIncome}/mo), verification status ({income?.VerificationStatus}), employer match, and income stability.\n" +
+                $"S05 — Fraud Screening (fraud_screening_agent): Assess identity risk score ({fraud?.IdentityRiskScore}), device risk, address mismatch, synthetic ID flags, and watchlist hits. Flag any concerns.\n" +
+                $"S06 — Policy Evaluation (policy_evaluation_agent): Review all policy rule outcomes. Identify any failed or flagged rules from the {rec.PolicyHits.Count} policy checks.\n" +
+                $"S07 — DTI & Affordability: Compute and validate the debt-to-income ratio. Verified DTI is {verifiedDti:P1} against the policy threshold.\n" +
+                $"S08 — Pricing Analysis (pricing_agent): Validate the pricing quote — APR: {quote.AprPct}%, monthly payment: ${quote.EstimatedMonthlyPayment}, payment-to-income: {quote.PaymentToIncomePct:P1}.\n" +
+                $"S09 — Underwriting Recommendation: Synthesize findings from all prior steps into a final recommendation.\n\n" +
+                $"FINAL OUTPUT REQUIREMENTS:\n" +
+                $"1. For each step (S01–S08), provide a brief finding or confirmation.\n" +
+                $"2. Produce a comprehensive underwriting recommendation: {rec.RecommendationStatus} (confidence: {rec.ConfidenceScore:F2})\n" +
+                $"3. Summarize the applicant's overall risk profile.\n" +
+                $"4. Address key risk factors and borrower strengths.\n" +
+                $"5. Note any conditions or flags requiring human attention.\n" +
+                $"6. Provide a clear, professional rationale for the human reviewer.";
 
             // RunAsync creates a thread and run in Foundry Agent Service
             var agentResponse = await orchestratorAgent.RunAsync(agentPrompt);
@@ -465,8 +477,8 @@ public class LoanAgentOrchestrator
                 runId, threadId ?? "N/A", foundryRunId ?? "N/A", agentDurationMs, agentRationale?.Length ?? 0);
             _logger.LogTrace("[{RunId}] Agent response text:\n{Rationale}", runId, agentRationale);
 
-            Log("S09", "Orchestrator Agent Analysis (Foundry)", "COMPLETE",
-                $"AI rationale generated via Foundry Agent Service [thread={threadId}, run={foundryRunId}, duration={agentDurationMs}ms]",
+            Log("S09", "Loan Orchestrator Agent (Foundry)", "COMPLETE",
+                $"Full workflow (S01–S09) executed via Foundry Agent Service [thread={threadId}, run={foundryRunId}, duration={agentDurationMs}ms]",
                 "loan_orchestrator");
         }
         catch (Exception ex)

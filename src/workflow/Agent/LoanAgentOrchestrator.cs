@@ -296,6 +296,20 @@ public class LoanAgentOrchestrator
 
         _logger.LogInformation("Enriched application data: {Size} chars", enrichedData.Length);
 
+        // Build the workflow prompt with explicit step instructions
+        var workflowPrompt = $"Execute the Loan Origination Workflow for application {applicationNo}.\n\n" +
+            $"WORKFLOW STEPS:\n" +
+            $"S01 — Application Intake: Confirm receipt and validate all required fields.\n" +
+            $"S02 — Data Enrichment: Verify supporting data gathered (credit, income, fraud, policy, pricing).\n" +
+            $"S03 — Credit Profile Analysis (credit-profile-agent): Analyze bureau score ({credit?.BureauScore}, {credit?.ScoreBand}), delinquencies, utilization.\n" +
+            $"S04 — Income Verification (income-verification-agent): Evaluate verified income (${income?.VerifiedMonthlyIncome}/mo), status ({income?.VerificationStatus}).\n" +
+            $"S05 — Fraud Screening (fraud-screening-agent): Assess identity risk ({fraud?.IdentityRiskScore}), device risk, watchlist hits.\n" +
+            $"S06 — Policy Evaluation (policy-evaluation-agent): Review {thresholds.Count} policy rules, flag failures.\n" +
+            $"S07 — DTI & Affordability: Verified DTI {verifiedDti:P1} against threshold.\n" +
+            $"S08 — Pricing Analysis (pricing-agent): APR {quote.AprPct}%, payment ${quote.EstimatedMonthlyPayment}/mo.\n" +
+            $"S09 — Underwriting Recommendation: Synthesize all findings into final recommendation ({rec.RecommendationStatus}, confidence {rec.ConfidenceScore:F2}).\n\n" +
+            $"ENRICHED APPLICATION DATA:\n{enrichedData}";
+
         // Execute the Declarative YAML workflow
         using var loggerFactory = LoggerFactory.Create(b => b.AddConsole().SetMinimumLevel(LogLevel.Debug));
         var workflowRunner = new Workflow.LoanWorkflowRunner(
@@ -303,7 +317,7 @@ public class LoanAgentOrchestrator
         Workflow.WorkflowResult workflowResult;
         try
         {
-            workflowResult = await workflowRunner.ExecuteAsync(enrichedData);
+            workflowResult = await workflowRunner.ExecuteAsync(workflowPrompt);
         }
         catch (Exception ex)
         {
@@ -327,6 +341,7 @@ public class LoanAgentOrchestrator
             ["agent_name"] = "loan-origination-workflow",
             ["workflow_type"] = "Declarative YAML Workflow",
             ["workflow_file"] = "LoanOrigination.yaml",
+            ["prompt"] = workflowPrompt,
             ["enriched_context"] = JsonSerializer.Deserialize<object>(enrichedData,
                 new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower })!,
             ["response"] = workflowResult.Rationale,
@@ -349,7 +364,7 @@ public class LoanAgentOrchestrator
             new() { StepId = "S06", StepName = "Policy Evaluation", Status = "COMPLETE", Timestamp = DateTime.UtcNow.ToString("o"), Detail = $"{thresholds.Count} rules evaluated", AgentName = "policy-evaluation-agent" },
             new() { StepId = "S07", StepName = "DTI & Affordability", Status = "COMPLETE", Timestamp = DateTime.UtcNow.ToString("o"), Detail = $"Verified DTI: {verifiedDti:P1}" },
             new() { StepId = "S08", StepName = "Pricing", Status = "COMPLETE", Timestamp = DateTime.UtcNow.ToString("o"), Detail = $"APR: {quote.AprPct}%, Payment: ${quote.EstimatedMonthlyPayment}/mo", AgentName = "pricing-agent" },
-            new() { StepId = "S09", StepName = "Underwriting Agent (Declarative Workflow)", Status = "COMPLETE", Timestamp = DateTime.UtcNow.ToString("o"), Detail = $"AI rationale generated via Declarative YAML Workflow [{workflowResult.DurationMs}ms]", AgentName = "loan-origination-workflow" },
+            new() { StepId = "S09", StepName = "Loan Orchestrator (Declarative Workflow)", Status = "COMPLETE", Timestamp = DateTime.UtcNow.ToString("o"), Detail = $"Full workflow (S01–S09) executed via Declarative YAML Workflow [{workflowResult.DurationMs}ms]", AgentName = "loan-origination-workflow" },
             new() { StepId = "S10", StepName = "Human Review Ready", Status = "PENDING", Timestamp = DateTime.UtcNow.ToString("o"), Detail = "Awaiting reviewer decision" },
         };
 
