@@ -3,8 +3,11 @@
 Red Team Agent — Azure AI Foundry
 Runs cloud-based AI red teaming evaluations against Loan Origination agents.
 
-Uses the beta.red_teams API from azure-ai-projects SDK 2.0 to create and
-run red teaming evaluations against Foundry agents.
+Uses the OpenAI Evals API + Foundry Evaluation Taxonomies to create and run
+red teaming evaluations against Foundry agents.
+
+NOTE: Red team evaluation runs require a supported region (e.g., eastus2,
+westus3). Canada East is NOT currently supported.
 """
 
 import json
@@ -15,9 +18,9 @@ from pathlib import Path
 
 from azure.ai.projects import AIProjectClient
 from azure.ai.projects.models import (
-    AttackStrategy,
+    AgentTaxonomyInput,
     AzureAIAgentTarget,
-    RedTeam,
+    EvaluationTaxonomy,
     RiskCategory,
 )
 from azure.core.rest import HttpRequest
@@ -39,24 +42,10 @@ DEFAULT_AGENTS = [
     "underwriting-recommendation-agent",
 ]
 
-# Maps user-friendly names to SDK enum values
-STRATEGY_MAP = {
-    "Flip": AttackStrategy.FLIP,
-    "Base64": AttackStrategy.BASE64,
-    "IndirectJailbreak": AttackStrategy.INDIRECT_JAILBREAK,
-    "Jailbreak": AttackStrategy.JAILBREAK,
-    "Crescendo": AttackStrategy.CRESCENDO,
-    "Baseline": AttackStrategy.BASELINE,
-    "ROT13": AttackStrategy.ROT13,
-    "Leetspeak": AttackStrategy.LEETSPEAK,
-    "UnicodeSubstitution": AttackStrategy.UNICODE_SUBSTITUTION,
-    "MultiTurn": AttackStrategy.MULTI_TURN,
-}
-
 AGENT_NAMES = os.environ.get("AGENT_NAMES", "").split(",") if os.environ.get("AGENT_NAMES") else DEFAULT_AGENTS
-RAW_STRATEGIES = os.environ.get("ATTACK_STRATEGIES", "Flip,Base64,IndirectJailbreak").split(",")
-ATTACK_STRATEGIES = [STRATEGY_MAP.get(s.strip(), s.strip()) for s in RAW_STRATEGIES]
+ATTACK_STRATEGIES = os.environ.get("ATTACK_STRATEGIES", "Flip,Base64,IndirectJailbreak").split(",")
 NUM_TURNS = int(os.environ.get("NUM_TURNS", "5"))
+MODEL_DEPLOYMENT = os.environ.get("MODEL_DEPLOYMENT_NAME", "gpt-4.1")
 API_VERSION = "2025-05-15-preview"
 
 OUTPUT_DIR = Path(__file__).resolve().parent.parent.parent / "output"
@@ -73,8 +62,9 @@ def banner():
     print("=" * 70)
     print(f"  Project:     {PROJECT_ENDPOINT}")
     print(f"  Agents:      {', '.join(AGENT_NAMES)}")
-    print(f"  Attacks:     {', '.join(str(s) for s in ATTACK_STRATEGIES)}")
+    print(f"  Attacks:     {', '.join(ATTACK_STRATEGIES)}")
     print(f"  Turns:       {NUM_TURNS}")
+    print(f"  Model:       {MODEL_DEPLOYMENT}")
     print(f"  Output:      {OUTPUT_DIR}")
     print("=" * 70)
     print()
@@ -92,6 +82,135 @@ def resolve_agent_version(project_client: AIProjectClient, agent_name: str) -> s
     data = resp.json()
     latest = data.get("versions", {}).get("latest", {})
     return latest.get("version", "1")
+
+
+def create_eval(oai_client, agent_name: str) -> str:
+    """Create a red team eval group with built-in safety evaluators."""
+    print(f"  📋 Creating eval for '{agent_name}'...")
+
+    red_team = oai_client.evals.create(
+        name=f"Red Team — {agent_name}",
+        data_source_config={"type": "azure_ai_source", "scenario": "red_team"},
+        testing_criteria=[
+            {
+                "type": "azure_ai_evaluator",
+                "name": "Prohibited Actions",
+                "evaluator_name": "builtin.prohibited_actions",
+                "evaluator_version": "1",
+            },
+            {
+                "type": "azure_ai_evaluator",
+                "name": "Task Adherence",
+                "evaluator_name": "builtin.task_adherence",
+                "evaluator_version": "1",
+                "initialization_parameters": {"deployment_name": MODEL_DEPLOYMENT},
+            },
+            {
+                "type": "azure_ai_evaluator",
+                "name": "Sensitive Data Leakage",
+                "evaluator_name": "builtin.sensitive_data_leakage",
+                "evaluator_version": "1",
+            },
+        ],
+    )
+
+    print(f"     Eval created: {red_team.id}")
+    return red_team.id
+
+
+def create_taxonomy(project_client: AIProjectClient, agent_name: str, agent_version: str) -> str:
+    """Generate a prohibited-actions taxonomy for the target agent."""
+    print(f"  🧬 Generating taxonomy for '{agent_name}' v{agent_version}...")
+
+    target = AzureAIAgentTarget(name=agent_name, version=agent_version)
+
+    taxonomy = project_client.beta.evaluation_taxonomies.create(
+        name=agent_name,
+        body=EvaluationTaxonomy(
+            description=f"Red teaming taxonomy for {agent_name}",
+            taxonomy_input=AgentTaxonomyInput(
+                risk_categories=[RiskCategory.PROHIBITED_ACTIONS],
+                target=target,
+            ),
+        ),
+    )
+
+    taxonomy_id = taxonomy.id if hasattr(taxonomy, "id") else str(taxonomy)
+    print(f"     Taxonomy created: {taxonomy_id}")
+    return taxonomy_id
+
+
+def create_run(oai_client, eval_id: str, agent_name: str, agent_version: str, taxonomy_id: str) -> str:
+    """Create a red teaming run with attack strategies."""
+    print(f"  🚀 Starting run for '{agent_name}'...")
+    print(f"     Attacks: {', '.join(ATTACK_STRATEGIES)}")
+    print(f"     Turns:   {NUM_TURNS}")
+
+    target = AzureAIAgentTarget(name=agent_name, version=agent_version)
+
+    eval_run = oai_client.evals.runs.create(
+        eval_id=eval_id,
+        name=f"Red Team Run — {agent_name}",
+        data_source={
+            "type": "azure_ai_red_team",
+            "item_generation_params": {
+                "type": "red_team_taxonomy",
+                "attack_strategies": ATTACK_STRATEGIES,
+                "num_turns": NUM_TURNS,
+                "source": {"type": "file_id", "id": taxonomy_id},
+            },
+            "target": target.as_dict(),
+        },
+    )
+
+    print(f"     Run created: {eval_run.id} (status: {eval_run.status})")
+    return eval_run.id
+
+
+def poll_run(oai_client, eval_id: str, run_id: str) -> str:
+    """Poll until the run completes, fails, or times out."""
+    print(f"  ⏳ Polling run {run_id}...")
+    start = time.monotonic()
+
+    while True:
+        run = oai_client.evals.runs.retrieve(run_id=run_id, eval_id=eval_id)
+        elapsed = int(time.monotonic() - start)
+        print(f"     [{elapsed:>4}s] Status: {run.status}")
+
+        if run.status in ("completed", "failed", "canceled"):
+            return run.status
+
+        if elapsed > POLL_TIMEOUT_SECONDS:
+            print(f"  ⚠️  Timeout after {POLL_TIMEOUT_SECONDS}s — run still {run.status}")
+            return run.status
+
+        time.sleep(POLL_INTERVAL_SECONDS)
+
+
+def fetch_results(oai_client, eval_id: str, run_id: str, agent_name: str) -> list:
+    """Fetch and save output items from a completed run."""
+    print(f"  📥 Fetching results for '{agent_name}'...")
+    items = list(oai_client.evals.runs.output_items.list(run_id=run_id, eval_id=eval_id))
+
+    output_path = OUTPUT_DIR / f"redteam_eval_output_items_{agent_name}.json"
+    with open(output_path, "w") as f:
+        json.dump(_to_serializable(items), f, indent=2, default=str)
+
+    print(f"     Saved {len(items)} items → {output_path}")
+    return items
+
+
+def _to_serializable(obj):
+    """Convert SDK objects to JSON-serializable form."""
+    if hasattr(obj, "as_dict"):
+        return obj.as_dict()
+    if hasattr(obj, "model_dump"):
+        return obj.model_dump()
+    if isinstance(obj, list):
+        return [_to_serializable(i) for i in obj]
+    if isinstance(obj, dict):
+        return {k: _to_serializable(v) for k, v in obj.items()}
+    return obj
 
 
 def run_redteam_for_agent(project_client: AIProjectClient, agent_name: str) -> dict:
@@ -113,79 +232,45 @@ def run_redteam_for_agent(project_client: AIProjectClient, agent_name: str) -> d
         result["agent_version"] = agent_version
         print(f"  📌 Agent version: {agent_version}")
 
-        # Build target
-        target = AzureAIAgentTarget(name=agent_name, version=agent_version)
+        oai = project_client.get_openai_client()
 
-        # Create and start the red team
-        print(f"  🚀 Creating red team run...")
-        print(f"     Attacks:    {', '.join(str(s) for s in ATTACK_STRATEGIES)}")
-        print(f"     Turns:      {NUM_TURNS}")
-        print(f"     Categories: ProhibitedActions")
+        # Step 1: Create eval group
+        eval_id = create_eval(oai, agent_name)
+        result["eval_id"] = eval_id
 
-        red_team = project_client.beta.red_teams.create(
-            red_team=RedTeam(
-                name=f"redteam-{agent_name}",
-                display_name=f"Red Team — {agent_name}",
-                target=target,
-                attack_strategies=ATTACK_STRATEGIES,
-                risk_categories=[RiskCategory.PROHIBITED_ACTIONS],
-                num_turns=NUM_TURNS,
-            )
-        )
+        # Step 2: Create taxonomy
+        taxonomy_id = create_taxonomy(project_client, agent_name, agent_version)
+        result["taxonomy_id"] = taxonomy_id
 
-        rt_name = red_team.name if hasattr(red_team, "name") else str(red_team)
-        rt_status = getattr(red_team, "status", "unknown")
-        print(f"     Created: {rt_name} (status: {rt_status})")
-        result["red_team_name"] = rt_name
+        # Step 3: Create and start run
+        run_id = create_run(oai, eval_id, agent_name, agent_version, taxonomy_id)
+        result["run_id"] = run_id
 
-        # Poll for completion
-        print(f"  ⏳ Polling for completion...")
-        start = time.monotonic()
+        # Step 4: Poll for completion
+        status = poll_run(oai, eval_id, run_id)
+        result["status"] = status
 
-        while True:
-            fetched = project_client.beta.red_teams.get(name=rt_name)
-            status = getattr(fetched, "status", "unknown")
-            elapsed = int(time.monotonic() - start)
-            print(f"     [{elapsed:>4}s] Status: {status}")
-
-            if status in ("completed", "Completed", "failed", "Failed", "canceled", "Canceled"):
-                result["status"] = status.lower()
-                break
-
-            if elapsed > POLL_TIMEOUT_SECONDS:
-                print(f"  ⚠️  Timeout after {POLL_TIMEOUT_SECONDS}s")
-                result["status"] = f"timeout ({status})"
-                break
-
-            time.sleep(POLL_INTERVAL_SECONDS)
-
-        # Save the red team result
-        output_path = OUTPUT_DIR / f"redteam_{agent_name}.json"
-        serialized = _to_serializable(fetched)
-        with open(output_path, "w") as f:
-            json.dump(serialized, f, indent=2, default=str)
-        print(f"  📥 Results saved → {output_path}")
-        result["output_file"] = str(output_path)
+        # Step 5: Fetch results
+        if status == "completed":
+            items = fetch_results(oai, eval_id, run_id, agent_name)
+            result["output_items_count"] = len(items)
+        else:
+            print(f"  ❌ Run ended with status: {status}")
 
     except Exception as e:
-        print(f"  ❌ Error: {e}")
-        result["error"] = str(e)
+        error_msg = str(e)
+        print(f"  ❌ Error: {error_msg}")
+        result["error"] = error_msg
+
+        if "not supported in" in error_msg and "region" in error_msg:
+            print()
+            print("  ⚠️  Red team evaluation is not available in this region.")
+            print("     Deploy your Foundry project to a supported region")
+            print("     (e.g., eastus2, westus3) and try again.")
+            result["status"] = "region_not_supported"
 
     result["completed_at"] = datetime.now(timezone.utc).isoformat()
     return result
-
-
-def _to_serializable(obj):
-    """Convert SDK objects to JSON-serializable form."""
-    if hasattr(obj, "as_dict"):
-        return obj.as_dict()
-    if hasattr(obj, "model_dump"):
-        return obj.model_dump()
-    if isinstance(obj, list):
-        return [_to_serializable(i) for i in obj]
-    if isinstance(obj, dict):
-        return {k: _to_serializable(v) for k, v in obj.items()}
-    return obj
 
 
 def main():
@@ -198,7 +283,7 @@ def main():
 
     summary = {
         "project_endpoint": PROJECT_ENDPOINT,
-        "attack_strategies": [str(s) for s in ATTACK_STRATEGIES],
+        "attack_strategies": ATTACK_STRATEGIES,
         "num_turns": NUM_TURNS,
         "started_at": datetime.now(timezone.utc).isoformat(),
         "agents": [],
@@ -211,6 +296,11 @@ def main():
         result = run_redteam_for_agent(project_client, agent_name)
         summary["agents"].append(result)
 
+        # Stop early if region is not supported
+        if result.get("status") == "region_not_supported":
+            print("\n  🛑 Stopping — region not supported for red team evaluations.")
+            break
+
     summary["completed_at"] = datetime.now(timezone.utc).isoformat()
 
     summary_path = OUTPUT_DIR / "redteam_summary.json"
@@ -219,11 +309,12 @@ def main():
 
     print()
     print("=" * 70)
-    print("  📊 Red Teaming Complete")
+    print("  📊 Red Teaming Summary")
     print("=" * 70)
     for r in summary["agents"]:
-        icon = "✅" if r["status"] == "completed" else "❌"
-        print(f"  {icon} {r['agent']}: {r['status']}")
+        icon = "✅" if r["status"] == "completed" else "⚠️" if r["status"] == "region_not_supported" else "❌"
+        items = r.get("output_items_count", "—")
+        print(f"  {icon} {r['agent']}: {r['status']} ({items} items)")
     print()
     print(f"  Summary saved → {summary_path}")
     print()
