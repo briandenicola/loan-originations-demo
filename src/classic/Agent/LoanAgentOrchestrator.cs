@@ -410,6 +410,8 @@ public class LoanAgentOrchestrator
         string agentRationale;
         string? threadId = null;
         string? foundryRunId = null;
+        string agentPrompt = "";
+        long agentDurationMs = 0;
 
         try
         {
@@ -432,7 +434,7 @@ public class LoanAgentOrchestrator
             _logger.LogDebug("[{RunId}] AIAgent resolved from Foundry. Calling RunAsync...", runId);
 
             // Create a prompt for the orchestrator to analyze and produce a recommendation
-            var agentPrompt =
+            agentPrompt =
                 $"Analyze this loan application and produce a comprehensive underwriting assessment.\n\n" +
                 $"ENRICHED APPLICATION DATA:\n{enrichedContext}\n\n" +
                 $"Based on the data above:\n" +
@@ -446,7 +448,8 @@ public class LoanAgentOrchestrator
             var agentResponse = await orchestratorAgent.RunAsync(agentPrompt);
 
             agentSw.Stop();
-            AgentCallDuration.Record(agentSw.ElapsedMilliseconds);
+            agentDurationMs = agentSw.ElapsedMilliseconds;
+            AgentCallDuration.Record(agentDurationMs);
 
             agentRationale = agentResponse.Text;
             threadId = agentResponse.AdditionalProperties?.GetValueOrDefault("threadId")?.ToString();
@@ -455,15 +458,15 @@ public class LoanAgentOrchestrator
             agentActivity?.SetTag("foundry.thread_id", threadId);
             agentActivity?.SetTag("foundry.run_id", foundryRunId);
             agentActivity?.SetTag("gen_ai.response.length", agentRationale?.Length ?? 0);
-            agentActivity?.SetTag("agent.call.duration_ms", agentSw.ElapsedMilliseconds);
+            agentActivity?.SetTag("agent.call.duration_ms", agentDurationMs);
             agentActivity?.SetStatus(ActivityStatusCode.Ok);
 
             _logger.LogInformation("[{RunId}] Foundry agent run complete. Thread: {ThreadId}, Run: {FoundryRunId}, Duration: {Duration}ms, Response: {Length} chars",
-                runId, threadId ?? "N/A", foundryRunId ?? "N/A", agentSw.ElapsedMilliseconds, agentRationale?.Length ?? 0);
+                runId, threadId ?? "N/A", foundryRunId ?? "N/A", agentDurationMs, agentRationale?.Length ?? 0);
             _logger.LogTrace("[{RunId}] Agent response text:\n{Rationale}", runId, agentRationale);
 
             Log("S09", "Orchestrator Agent Analysis (Foundry)", "COMPLETE",
-                $"AI rationale generated via Foundry Agent Service [thread={threadId}, run={foundryRunId}, duration={agentSw.ElapsedMilliseconds}ms]",
+                $"AI rationale generated via Foundry Agent Service [thread={threadId}, run={foundryRunId}, duration={agentDurationMs}ms]",
                 "loan_orchestrator");
         }
         catch (Exception ex)
@@ -482,6 +485,24 @@ public class LoanAgentOrchestrator
 
         rec.RationaleSummary = agentRationale ?? rec.RationaleSummary;
         Log("S10", "Human Review Ready", "PENDING", "Awaiting reviewer decision");
+
+        // Save agent workflow trace (prompt, context, thread/run, response)
+        var agentTrace = new Dictionary<string, object>
+        {
+            ["run_id"] = runId,
+            ["application_no"] = applicationNo,
+            ["agent_name"] = "loan_orchestrator",
+            ["agent_id"] = orchestratorAgentId,
+            ["prompt"] = agentPrompt,
+            ["enriched_context"] = JsonSerializer.Deserialize<object>(enrichedContext, _jsonOpts)!,
+            ["response"] = agentRationale ?? "",
+            ["response_length_chars"] = agentRationale?.Length ?? 0,
+            ["duration_ms"] = agentDurationMs,
+            ["timestamp"] = Ts(),
+        };
+        if (threadId != null) agentTrace["foundry_thread_id"] = threadId;
+        if (foundryRunId != null) agentTrace["foundry_run_id"] = foundryRunId;
+        await WriteJson("agent_workflow_trace.json", agentTrace);
 
         // Build output
         return await BuildAndSaveResponse(runId, applicationNo, app, credit, income, fraud,

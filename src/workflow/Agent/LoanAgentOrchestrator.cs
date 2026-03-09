@@ -319,6 +319,25 @@ public class LoanAgentOrchestrator
         // Override the rule-based rationale with the AI-generated one
         rec.RationaleSummary = workflowResult.Rationale;
 
+        // Save agent workflow trace (input, context, thread/run, response)
+        var agentTrace = new Dictionary<string, object>
+        {
+            ["run_id"] = runId,
+            ["application_no"] = applicationNo,
+            ["agent_name"] = "loan-origination-workflow",
+            ["workflow_type"] = "Declarative YAML Workflow",
+            ["workflow_file"] = "LoanOrigination.yaml",
+            ["enriched_context"] = JsonSerializer.Deserialize<object>(enrichedData,
+                new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower })!,
+            ["response"] = workflowResult.Rationale,
+            ["response_length_chars"] = workflowResult.Rationale.Length,
+            ["duration_ms"] = workflowResult.DurationMs,
+            ["timestamp"] = DateTime.UtcNow.ToString("o"),
+        };
+        if (workflowResult.ThreadId != null) agentTrace["foundry_thread_id"] = workflowResult.ThreadId;
+        if (workflowResult.FoundryRunId != null) agentTrace["foundry_run_id"] = workflowResult.FoundryRunId;
+        await WriteJson("agent_workflow_trace.json", agentTrace);
+
         // Build workflow step log
         var steps = new List<WorkflowStep>
         {
