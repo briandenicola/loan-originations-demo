@@ -234,16 +234,15 @@ public class LoanAgentOrchestrator
         _logger.LogInformation("Application {AppNo} loaded: applicant={Applicant}, amount=${Amount}, type={Type}, term={Term}mo",
             applicationNo, app.ApplicantName, app.LoanAmountRequested, app.LoanType, app.RequestedTermMonths);
 
-        // Require Foundry endpoint
-        var foundryEndpointStr = _config["AzureOpenAI:Endpoint"];
-        if (string.IsNullOrEmpty(foundryEndpointStr))
+        // Require Foundry configuration
+        if (_projectClient == null)
         {
-            _logger.LogError("❌ AzureOpenAI:Endpoint is not configured. Cannot run workflow.");
-            throw new InvalidOperationException("Azure AI Foundry is not configured. Set AzureOpenAI:Endpoint in appsettings.json.");
+            _logger.LogError("❌ AIProjectClient is not configured. Cannot run workflow.");
+            throw new InvalidOperationException("Azure AI Foundry is not configured.");
         }
 
-        activity?.SetTag("loan.execution_mode", "declarative_workflow");
-        WorkflowCounter.Add(1, new KeyValuePair<string, object?>("mode", "declarative_workflow"));
+        activity?.SetTag("loan.execution_mode", "code_coordinator");
+        WorkflowCounter.Add(1, new KeyValuePair<string, object?>("mode", "code_coordinator"));
 
         // Build enriched application data (previously done in IntakeExecutor)
         var credit = _plugins.GetCreditProfile(applicationNo);
@@ -296,61 +295,187 @@ public class LoanAgentOrchestrator
 
         _logger.LogInformation("Enriched application data: {Size} chars", enrichedData.Length);
 
-        // Build the workflow prompt with explicit step instructions
-        var workflowPrompt = $"Execute the Loan Origination Workflow for application {applicationNo}.\n\n" +
-            $"WORKFLOW STEPS:\n" +
-            $"S01 — Application Intake: Confirm receipt and validate all required fields.\n" +
-            $"S02 — Data Enrichment: Verify supporting data gathered (credit, income, fraud, policy, pricing).\n" +
-            $"S03 — Credit Profile Analysis (credit-profile-agent): Analyze bureau score ({credit?.BureauScore}, {credit?.ScoreBand}), delinquencies, utilization.\n" +
-            $"S04 — Income Verification (income-verification-agent): Evaluate verified income (${income?.VerifiedMonthlyIncome}/mo), status ({income?.VerificationStatus}).\n" +
-            $"S05 — Fraud Screening (fraud-screening-agent): Assess identity risk ({fraud?.IdentityRiskScore}), device risk, watchlist hits.\n" +
-            $"S06 — Policy Evaluation (policy-evaluation-agent): Review {thresholds.Count} policy rules, flag failures.\n" +
-            $"S07 — DTI & Affordability: Verified DTI {verifiedDti:P1} against threshold.\n" +
-            $"S08 — Pricing Analysis (pricing-agent): APR {quote.AprPct}%, payment ${quote.EstimatedMonthlyPayment}/mo.\n" +
-            $"S09 — Underwriting Recommendation: Synthesize all findings into final recommendation ({rec.RecommendationStatus}, confidence {rec.ConfidenceScore:F2}).\n\n" +
-            $"ENRICHED APPLICATION DATA:\n{enrichedData}";
+        activity?.SetTag("loan.execution_mode", "code_coordinator");
+        var runId = $"RUN-{Guid.NewGuid().ToString("N")[..8].ToUpper()}";
+        activity?.SetTag("loan.run_id", runId);
 
-        // Execute the Declarative YAML workflow
-        using var loggerFactory = LoggerFactory.Create(b => b.AddConsole().SetMinimumLevel(LogLevel.Debug));
-        var workflowRunner = new Workflow.LoanWorkflowRunner(
-            new Uri(foundryEndpointStr), _logger, loggerFactory);
-        Workflow.WorkflowResult workflowResult;
+        // ═══════════════════════════════════════════════════════════════
+        // Code-Based Coordinator Workflow
+        // Calls each specialist agent individually via AIProjectClient,
+        // gathers responses, compiles a comprehensive brief, and sends
+        // it to the underwriting agent for the final recommendation.
+        // ═══════════════════════════════════════════════════════════════
+
+        if (_projectClient == null)
+            throw new InvalidOperationException("AIProjectClient not configured.");
+
+        // Resolve all agents from Foundry
+        var agentMap = new Dictionary<string, string>(); // name → id
+        await foreach (var a in _projectClient.Agents.GetAgentsAsync())
+            agentMap[a.Name] = a.Id;
+
+        _logger.LogInformation("[{RunId}] Resolved {Count} agents from Foundry", runId, agentMap.Count);
+
+        // Helper: call a single specialist agent by name
+        async Task<(string response, string? threadId, string? runIdStr, long durationMs)> CallAgentAsync(
+            string agentName, string prompt, string stepId)
+        {
+            if (!agentMap.TryGetValue(agentName, out var agentId))
+            {
+                _logger.LogWarning("[{RunId}] Agent '{Agent}' not found in Foundry — skipping", runId, agentName);
+                return ($"Agent '{agentName}' not found in Foundry.", null, null, 0);
+            }
+
+            using var agentActivity = ActivitySource.StartActivity($"InvokeAgent_{stepId}", ActivityKind.Client);
+            agentActivity?.SetTag("gen_ai.agent.name", agentName);
+            var agentSw = System.Diagnostics.Stopwatch.StartNew();
+
+            _logger.LogInformation("[{RunId}] {Step}: Calling agent '{Agent}'...", runId, stepId, agentName);
+
+            var agent = await _projectClient!.GetAIAgentAsync(agentId);
+            var response = await agent.RunAsync(prompt);
+
+            agentSw.Stop();
+            var text = response.Text ?? "(empty response)";
+            _logger.LogInformation("[{RunId}] {Step}: Agent '{Agent}' responded in {Duration}ms ({Chars} chars)",
+                runId, stepId, agentName, agentSw.ElapsedMilliseconds, text.Length);
+
+            agentActivity?.SetTag("agent.response.length", text.Length);
+            agentActivity?.SetTag("agent.call.duration_ms", agentSw.ElapsedMilliseconds);
+            agentActivity?.SetStatus(ActivityStatusCode.Ok);
+
+            return (text,
+                response.AdditionalProperties?.GetValueOrDefault("threadId")?.ToString(),
+                response.ResponseId,
+                agentSw.ElapsedMilliseconds);
+        }
+
+        // ── S03–S08: Call specialist agents ─────────────────────────────
+
+        var specialistResults = new Dictionary<string, string>();
+        var agentTraces = new List<object>();
+
+        var specialists = new (string stepId, string agentName, string prompt)[]
+        {
+            ("S03", "credit-profile-agent",
+                $"Analyze the credit profile for this loan application. Provide a structured risk assessment covering bureau score, delinquencies, utilization, and credit age.\n\nAPPLICATION DATA:\n{enrichedData}"),
+            ("S04", "income-verification-agent",
+                $"Verify the income data for this loan application. Assess verification confidence, employer match, income stability, and affordability.\n\nAPPLICATION DATA:\n{enrichedData}"),
+            ("S05", "fraud-screening-agent",
+                $"Screen this loan application for fraud signals. Classify the fraud risk level, check identity verification, device signals, and watchlist matches.\n\nAPPLICATION DATA:\n{enrichedData}"),
+            ("S06", "policy-evaluation-agent",
+                $"Evaluate this loan application against all underwriting policy rules POL-001 through POL-010. Provide per-rule PASS/FAIL assessment with reasoning.\n\nAPPLICATION DATA:\n{enrichedData}"),
+            ("S08", "pricing-agent",
+                $"Review the pricing data in this loan application. Validate the risk tier assignment, quoted APR, and monthly payment calculations.\n\nAPPLICATION DATA:\n{enrichedData}"),
+        };
+
+        foreach (var (stepId, agentName, prompt) in specialists)
+        {
+            try
+            {
+                var (response, tid, rid, dur) = await CallAgentAsync(agentName, prompt, stepId);
+                specialistResults[stepId] = response;
+                agentTraces.Add(new { step = stepId, agent = agentName, response_length = response.Length, duration_ms = dur, thread_id = tid, run_id = rid });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "[{RunId}] {Step}: Agent '{Agent}' failed: {Error}", runId, stepId, agentName, ex.Message);
+                specialistResults[stepId] = $"ERROR: {ex.Message}";
+                agentTraces.Add(new { step = stepId, agent = agentName, error = ex.Message });
+            }
+        }
+
+        // ── Compile comprehensive brief ─────────────────────────────────
+
+        var briefBuilder = new System.Text.StringBuilder();
+        briefBuilder.AppendLine("You are the final underwriting recommendation agent. Below is the ORIGINAL APPLICATION DATA followed by COMPLETE ANALYSIS from each specialist agent. Use ALL of this information to produce your final recommendation.");
+        briefBuilder.AppendLine();
+        briefBuilder.AppendLine("═══════════════════════════════════════════");
+        briefBuilder.AppendLine("SECTION 1: ORIGINAL APPLICATION DATA");
+        briefBuilder.AppendLine("═══════════════════════════════════════════");
+        briefBuilder.AppendLine(enrichedData);
+        briefBuilder.AppendLine();
+
+        var sectionNames = new Dictionary<string, string>
+        {
+            ["S03"] = "CREDIT PROFILE ANALYSIS (credit-profile-agent)",
+            ["S04"] = "INCOME VERIFICATION ANALYSIS (income-verification-agent)",
+            ["S05"] = "FRAUD SCREENING ANALYSIS (fraud-screening-agent)",
+            ["S06"] = "POLICY EVALUATION (policy-evaluation-agent)",
+            ["S08"] = "PRICING ANALYSIS (pricing-agent)",
+        };
+
+        int sectionNum = 2;
+        foreach (var (stepId, sectionName) in sectionNames)
+        {
+            briefBuilder.AppendLine("═══════════════════════════════════════════");
+            briefBuilder.AppendLine($"SECTION {sectionNum}: {sectionName}");
+            briefBuilder.AppendLine("═══════════════════════════════════════════");
+            briefBuilder.AppendLine(specialistResults.GetValueOrDefault(stepId, "(no response)"));
+            briefBuilder.AppendLine();
+            sectionNum++;
+        }
+
+        briefBuilder.AppendLine("═══════════════════════════════════════════");
+        briefBuilder.AppendLine("YOUR TASK — FINAL UNDERWRITING RECOMMENDATION");
+        briefBuilder.AppendLine("═══════════════════════════════════════════");
+        briefBuilder.AppendLine("Based on ALL of the above specialist analyses and the original application data, produce your FINAL UNDERWRITING RECOMMENDATION including:");
+        briefBuilder.AppendLine("1. Recommendation status: APPROVE, CONDITIONAL, or DECLINE");
+        briefBuilder.AppendLine("2. Confidence score (0.0 to 1.0)");
+        briefBuilder.AppendLine("3. Key risk factors and mitigating factors");
+        briefBuilder.AppendLine("4. Conditions (if CONDITIONAL)");
+        briefBuilder.AppendLine("5. Professional rationale summary for a human reviewer");
+
+        var comprehensiveBrief = briefBuilder.ToString();
+        _logger.LogInformation("[{RunId}] Compiled comprehensive brief: {Size} chars (from {SpecialistCount} specialist agents)",
+            runId, comprehensiveBrief.Length, specialistResults.Count);
+
+        // ── S09: Call underwriting recommendation agent ──────────────────
+
+        string agentRationale;
+        string? lastThreadId = null;
+        string? lastRunId = null;
+        long underwritingDurationMs = 0;
+
         try
         {
-            workflowResult = await workflowRunner.ExecuteAsync(enrichedData);
+            var (response, tid, rid, dur) = await CallAgentAsync(
+                "underwriting-recommendation-agent", comprehensiveBrief, "S09");
+            agentRationale = response;
+            lastThreadId = tid;
+            lastRunId = rid;
+            underwritingDurationMs = dur;
+            agentTraces.Add(new { step = "S09", agent = "underwriting-recommendation-agent", response_length = response.Length, duration_ms = dur, thread_id = tid, run_id = rid });
         }
         catch (Exception ex)
         {
             AgentErrorCounter.Add(1);
-            _logger.LogError(ex, "❌ Agent Framework workflow failed for {AppNo}: {Error}", applicationNo, ex.Message);
+            _logger.LogError(ex, "[{RunId}] ❌ Underwriting agent failed: {Error}", runId, ex.Message);
             activity?.SetStatus(ActivityStatusCode.Error, ex.Message);
-            throw new InvalidOperationException($"Agent workflow failed: {ex.Message}", ex);
+            throw new InvalidOperationException($"Underwriting agent failed: {ex.Message}", ex);
         }
 
-        // Use already-computed data for the response
-        var runId = $"RUN-{Guid.NewGuid().ToString("N")[..8].ToUpper()}";
-
         // Override the rule-based rationale with the AI-generated one
-        rec.RationaleSummary = workflowResult.Rationale;
+        rec.RationaleSummary = agentRationale;
 
-        // Save agent workflow trace (input, context, thread/run, response)
+        // Save agent workflow trace
         var agentTrace = new Dictionary<string, object>
         {
             ["run_id"] = runId,
             ["application_no"] = applicationNo,
-            ["agent_name"] = "loan-origination-workflow",
-            ["workflow_type"] = "Declarative YAML Workflow",
-            ["workflow_file"] = "LoanOrigination.yaml",
-            ["prompt"] = workflowPrompt,
+            ["workflow_type"] = "Code-Based Coordinator Workflow",
+            ["specialist_agents_called"] = specialistResults.Count,
+            ["specialist_traces"] = agentTraces,
+            ["comprehensive_brief_chars"] = comprehensiveBrief.Length,
+            ["underwriting_response"] = agentRationale,
+            ["underwriting_response_chars"] = agentRationale.Length,
+            ["underwriting_duration_ms"] = underwritingDurationMs,
             ["enriched_context"] = JsonSerializer.Deserialize<object>(enrichedData,
                 new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower })!,
-            ["response"] = workflowResult.Rationale,
-            ["response_length_chars"] = workflowResult.Rationale.Length,
-            ["duration_ms"] = workflowResult.DurationMs,
             ["timestamp"] = DateTime.UtcNow.ToString("o"),
         };
-        if (workflowResult.ThreadId != null) agentTrace["foundry_thread_id"] = workflowResult.ThreadId;
-        if (workflowResult.FoundryRunId != null) agentTrace["foundry_run_id"] = workflowResult.FoundryRunId;
+        if (lastThreadId != null) agentTrace["foundry_thread_id"] = lastThreadId;
+        if (lastRunId != null) agentTrace["foundry_run_id"] = lastRunId;
         await WriteJson("agent_workflow_trace.json", agentTrace);
 
         // Build workflow step log
@@ -364,12 +489,12 @@ public class LoanAgentOrchestrator
             new() { StepId = "S06", StepName = "Policy Evaluation", Status = "COMPLETE", Timestamp = DateTime.UtcNow.ToString("o"), Detail = $"{thresholds.Count} rules evaluated", AgentName = "policy-evaluation-agent" },
             new() { StepId = "S07", StepName = "DTI & Affordability", Status = "COMPLETE", Timestamp = DateTime.UtcNow.ToString("o"), Detail = $"Verified DTI: {verifiedDti:P1}" },
             new() { StepId = "S08", StepName = "Pricing", Status = "COMPLETE", Timestamp = DateTime.UtcNow.ToString("o"), Detail = $"APR: {quote.AprPct}%, Payment: ${quote.EstimatedMonthlyPayment}/mo", AgentName = "pricing-agent" },
-            new() { StepId = "S09", StepName = "Loan Orchestrator (Declarative Workflow)", Status = "COMPLETE", Timestamp = DateTime.UtcNow.ToString("o"), Detail = $"Full workflow (S01–S09) executed via Declarative YAML Workflow [{workflowResult.DurationMs}ms]", AgentName = "loan-origination-workflow" },
+            new() { StepId = "S09", StepName = "Underwriting Recommendation", Status = "COMPLETE", Timestamp = DateTime.UtcNow.ToString("o"), Detail = $"Code-based coordinator — {specialistResults.Count} specialists + underwriter [{underwritingDurationMs}ms]", AgentName = "underwriting-recommendation-agent" },
             new() { StepId = "S10", StepName = "Human Review Ready", Status = "PENDING", Timestamp = DateTime.UtcNow.ToString("o"), Detail = "Awaiting reviewer decision" },
         };
 
         var result = await BuildAndSaveResponse(runId, applicationNo, app, credit, income, fraud,
-            quote, rec, verifiedDti, steps, workflowResult.ThreadId, workflowResult.FoundryRunId);
+            quote, rec, verifiedDti, steps, lastThreadId, lastRunId);
 
         sw.Stop();
         WorkflowDuration.Record(sw.ElapsedMilliseconds, new KeyValuePair<string, object?>("application_no", applicationNo));

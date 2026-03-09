@@ -1,8 +1,10 @@
 using System.Diagnostics;
 using Azure.Identity;
+using Microsoft.Agents.AI;
 using Microsoft.Agents.AI.Workflows;
 using Microsoft.Agents.AI.Workflows.Declarative;
 using Microsoft.Agents.AI.Workflows.Declarative.Events;
+using Microsoft.Extensions.AI;
 
 namespace LoanOriginationDemo.Agent.Workflow;
 
@@ -37,6 +39,9 @@ public class LoanWorkflowRunner
 
     /// <summary>
     /// Creates a Workflow instance from the declarative YAML definition.
+    /// The Func&lt;string, ChatMessage&gt; converter ensures the string input is
+    /// wrapped as a User ChatMessage, properly populating System.LastMessage.Text
+    /// in the YAML expression engine.
     /// </summary>
     private Microsoft.Agents.AI.Workflows.Workflow CreateWorkflow()
     {
@@ -61,13 +66,14 @@ public class LoanWorkflowRunner
                 $"Workflow YAML file not found at '{workflowPath}'. Ensure LoanOrigination.yaml is copied to output.", workflowPath);
         }
 
-        return DeclarativeWorkflowBuilder.Build<string>(workflowPath, options);
+        return DeclarativeWorkflowBuilder.Build<string>(workflowPath, options,
+            input => new ChatMessage(ChatRole.User, input));
     }
 
     /// <summary>
     /// Executes the declarative loan origination workflow.
-    /// The input is the enriched application data JSON string.
-    /// Returns the AI-generated underwriting rationale.
+    /// The input is the enriched application data JSON string, wrapped as a
+    /// ChatMessage(User) so the YAML can access it via System.LastMessage.Text.
     /// </summary>
     public async Task<WorkflowResult> ExecuteAsync(string enrichedApplicationData)
     {
@@ -78,14 +84,22 @@ public class LoanWorkflowRunner
         var workflow = CreateWorkflow();
 
         _logger.LogInformation("🚀 Executing declarative workflow via InProcessExecution...");
+        _logger.LogInformation("📦 Input data size: {Size} chars", enrichedApplicationData.Length);
         var executionSw = Stopwatch.StartNew();
 
         var rationale = new System.Text.StringBuilder();
 
+        // The string input is converted to a User ChatMessage by the
+        // converter function provided to DeclarativeWorkflowBuilder.Build<string>,
+        // ensuring System.LastMessage.Text is populated in the YAML.
         var checkpointManager = CheckpointManager.CreateInMemory();
         await using var run = await InProcessExecution
             .RunStreamingAsync(workflow, enrichedApplicationData, checkpointManager)
             .ConfigureAwait(false);
+
+        // Send TurnToken to trigger workflow execution with event emission
+        // (required per official samples — without this, events may not fire)
+        await run.TrySendMessageAsync(new TurnToken(emitEvents: true));
 
         await foreach (var evt in run.WatchStreamAsync().ConfigureAwait(false))
         {
