@@ -5,7 +5,8 @@ module "project_classic" {
   ]
   source   = "./project"
 
-  application_owner_object_id = var.app_service_principal_object_id
+  application_owner_object_id = data.azurerm_client_config.current.object_id
+  app_service_principal_object_id = var.app_service_principal_object_id
 
   foundry_project = {
     name          = "${local.project_name}-classic"
@@ -38,7 +39,8 @@ module "project_workflow" {
   ]
   source   = "./project"
 
-  application_owner_object_id = var.app_service_principal_object_id
+  application_owner_object_id = data.azurerm_client_config.current.object_id
+  app_service_principal_object_id = var.app_service_principal_object_id
 
   foundry_project = {
     name          = "${local.project_name}-workflow"

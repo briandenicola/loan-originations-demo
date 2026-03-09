@@ -34,7 +34,7 @@ resource "azurerm_subnet" "nodes" {
   }
 
   name                 = "nodes"
-  resource_group_name  = azurerm_resource_group.this.name
+  resource_group_name  = azurerm_resource_group.core.name
   virtual_network_name = azurerm_virtual_network.this.name
   address_prefixes     = [local.nodes_subnet_cidir]
 }

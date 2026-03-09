@@ -1,65 +1,38 @@
 
-data "azurerm_client_config" "current" {}
-
-locals {
-  role_principals = {
-    logged_in_user    = {
-      id             = data.azurerm_client_config.current.object_id
-      principal_type = "User"
-    }
-    application_owner = {
-      id             = var.application_owner_object_id
-      principal_type = "User"
-    }
-    app_spn           = {
-      id             = var.app_service_principal_object_id
-      principal_type = "ServicePrincipal"
-    }
-  }
-}
-
-resource "azurerm_role_assignment" "ai_foundry_developer" {
-  for_each = local.role_principals
-  depends_on = [
-    azurerm_resource_group.this
-  ]
+resource "azurerm_role_assignment" "ai_foundry_owner" {
   scope                = azurerm_resource_group.this.id
   role_definition_name = "Azure AI Developer"
-  principal_id         = each.value.id
-  principal_type       = each.value.principal_type
+  principal_id         = data.azurerm_client_config.current.object_id
 }
 
-resource "azurerm_role_assignment" "ai_foundry_project_manager" {
-  for_each = local.role_principals
-  depends_on = [
-    azurerm_resource_group.this
-  ]
+resource "azurerm_role_assignment" "ai_foundry_owner_project_manager" {
   scope                = azurerm_resource_group.this.id
   role_definition_name = "Azure AI Project Manager"
-  principal_id         = each.value.id
-  principal_type       = each.value.principal_type
+  principal_id         = data.azurerm_client_config.current.object_id
 }
 
-resource "azurerm_role_assignment" "cognitive_services_openai_user" {
-  for_each = local.role_principals
-  depends_on = [
-    azapi_resource.ai_foundry_project
-  ]
-  scope                = azapi_resource.ai_foundry_project.id
-  role_definition_name = "Cognitive Services OpenAI User"
-  principal_id         = each.value.id
-  principal_type       = each.value.principal_type
-}
-
-resource "azurerm_role_assignment" "cognitive_services_openai_contributor" {
-  for_each = local.role_principals
-  depends_on = [
-    azapi_resource.ai_foundry_project
-  ]
-  scope                = azapi_resource.ai_foundry_project.id
+resource "azurerm_role_assignment" "cognitive_services_owner_contributor" {
+  scope                = azurerm_resource_group.this.id
   role_definition_name = "Cognitive Services OpenAI Contributor"
-  principal_id         = each.value.id
-  principal_type       = each.value.principal_type
+  principal_id         = data.azurerm_client_config.current.object_id
+}
+
+resource "azurerm_role_assignment" "ai_foundry_app_spn_developer" {
+  scope                = azurerm_resource_group.this.id
+  role_definition_name = "Azure AI Developer"
+  principal_id         = var.app_service_principal_object_id
+}
+
+resource "azurerm_role_assignment" "ai_foundry_app_spn_project_manager" {
+  scope                = azurerm_resource_group.this.id
+  role_definition_name = "Azure AI Project Manager"
+  principal_id         = var.app_service_principal_object_id
+}
+
+resource "azurerm_role_assignment" "cognitive_services_openai_app_spn_contributor" {
+  scope                = azurerm_resource_group.this.id
+  role_definition_name = "Cognitive Services OpenAI Contributor"
+  principal_id         = var.app_service_principal_object_id
 }
 
 # resource "azurerm_role_assignment" "cosmosdb_operator_ai_foundry_project" {
