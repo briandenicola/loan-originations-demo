@@ -49,5 +49,5 @@ tasks:
   down:
     desc: Destroys all Azure resources and cleans up Terraform
     cmds:
-      - powershell -NoProfile -Command "az group list --tag Application='{{.TITLE}}' --query '[].name' -o tsv | % { az group delete --verbose -y --no-wait --name $_ }"
+      - powershell -NoProfile -Command "az group list --tag Application='{{.TITLE}}' --query '[].name' -o tsv | % { az group delete --verbose -y --no-wait --name \$_ }"
       - powershell -NoProfile -Command "Set-Location infrastructure; Remove-Item -Recurse -Force terraform.tfstate.d, .terraform.lock.hcl, .terraform, terraform.tfstate, terraform.tfstate.backup, .terraform.tfstate.lock.info -ErrorAction SilentlyContinue"
