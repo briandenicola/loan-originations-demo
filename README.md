@@ -99,11 +99,11 @@ Both implementations create six specialist agents backed by specific model deplo
 | Agent | Model | Responsibility |
 |-------|-------|----------------|
 | `credit-profile-agent` | gpt-4.1 | Assesses credit bureau data (score, delinquencies, utilization) |
-| `income-verification-agent` | Phi-4-reasoning | Validates payroll records, employer match, income stability |
-| `fraud-screening-agent` | gpt-5.2-chat | Evaluates identity risk, device risk, watchlist hits, synthetic ID flags |
+| `income-verification-agent` | gpt-4.1 | Validates payroll records, employer match, income stability |
+| `fraud-screening-agent` | gpt-4.1 | Evaluates identity risk, device risk, watchlist hits, synthetic ID flags |
 | `policy-evaluation-agent` | gpt-4.1 | Evaluates 10 underwriting policy rules (POL-001 through POL-010) |
-| `pricing-agent` | Phi-4-reasoning | Validates APR, monthly payment, payment-to-income ratio |
-| `underwriting-recommendation-agent` | gpt-5.2-chat | Produces final APPROVE / CONDITIONAL / DECLINE with confidence score |
+| `pricing-agent` | gpt-4.1 | Validates APR, monthly payment, payment-to-income ratio |
+| `underwriting-recommendation-agent` | gpt-4.1 | Produces final APPROVE / CONDITIONAL / DECLINE with confidence score |
 | `health-check-agent` | gpt-4.1 | Startup connectivity test — confirms Foundry end-to-end health |
 
 > **Note**: Classic uses underscore-separated names (`credit_profile_agent`). Workflow uses hyphen-separated names (`credit-profile-agent`) as required by the new versioned agent API.
@@ -189,7 +189,7 @@ The `infrastructure/` directory contains Terraform IaC that provisions **two AI 
 | Project | Model | Version | SKU |
 |---------|-------|---------|-----|
 | `project_classic` | gpt-4.1 | 2025-04-14 | GlobalStandard (250) |
-| `project_workflow` | gpt-5.2-chat | 2026-02-10 | GlobalStandard (250) |
+| `project_workflow` | gpt-4.1 | 2025-04-14 | GlobalStandard (250) |
 
 ### Authentication
 

@@ -551,7 +551,7 @@ public class LoanAgentOrchestrator
             ["status"] = "AWAITING_REVIEW",
             ["agent_framework"] = "Microsoft Agent Framework / Foundry Agent Service",
             ["execution_mode"] = "Declarative YAML Workflow (LoanOrigination.yaml)",
-            ["llm_model"] = "gpt-4.1, gpt-5.2-chat, Phi-4-reasoning (Azure AI Foundry)",
+            ["llm_model"] = "gpt-4.1 (Azure AI Foundry)",
             ["steps"] = steps,
         };
         if (threadId != null) workflowLog["foundry_thread_id"] = threadId;
