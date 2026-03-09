@@ -107,21 +107,40 @@ footer { text-align: center; padding: 24px; color: var(--text-muted); font-size:
 .wf-step.complete { border-left-color: var(--success); background: #f0fff0; }
 .wf-step.pending { border-left-color: var(--warning); background: #fff8f0; }
 .wf-step.running { border-left-color: var(--primary); background: #f0f8ff; animation: stepPulse 1.5s infinite; }
-.wf-step.ai-running {
-    border-left-color: #764ba2; border-left-width: 6px;
-    background: linear-gradient(135deg, #f3e8ff, #e8d5f5);
-    animation: aiPulse 2s ease-in-out infinite;
-    box-shadow: 0 0 12px rgba(118,75,162,0.25);
-    padding: 18px 20px;
-}
-.wf-step.ai-running .wf-step-detail {
-    color: #764ba2; font-weight: 600; font-size: 0.95rem;
-}
-.wf-step.ai-running .wf-step-icon { font-size: 1.5rem; }
 @keyframes stepPulse { 0%,100% { opacity: 1; } 50% { opacity: 0.7; } }
+
+/* AI Workflow Banner — shown while Foundry agents are running */
+.ai-workflow-banner {
+    display: flex; align-items: center; gap: 16px;
+    padding: 20px 24px; border-radius: 12px; margin-bottom: 16px;
+    background: linear-gradient(135deg, #f3e8ff, #e8d5f5);
+    border: 2px solid #764ba2;
+    box-shadow: 0 0 16px rgba(118,75,162,0.25);
+    animation: aiPulse 2s ease-in-out infinite;
+}
+.ai-workflow-banner.complete {
+    background: linear-gradient(135deg, #dff6dd, #c3efc1);
+    border-color: var(--success);
+    box-shadow: 0 0 12px rgba(16,124,16,0.2);
+    animation: none;
+}
+.ai-workflow-banner.error {
+    background: linear-gradient(135deg, #fde7e9, #f5c2c5);
+    border-color: #d13438;
+    box-shadow: 0 0 12px rgba(209,52,56,0.2);
+    animation: none;
+}
+.ai-banner-icon { font-size: 2rem; }
+.ai-banner-text { display: flex; flex-direction: column; gap: 4px; }
+.ai-banner-text strong { font-size: 1.05rem; color: #4a1d7a; }
+.ai-workflow-banner.complete .ai-banner-text strong { color: #0b5e0b; }
+.ai-workflow-banner.error .ai-banner-text strong { color: #a4262c; }
+#ai-banner-detail { font-size: 0.9rem; color: #764ba2; }
+.ai-workflow-banner.complete #ai-banner-detail { color: #107c10; }
+.ai-workflow-banner.error #ai-banner-detail { color: #a4262c; }
 @keyframes aiPulse {
     0%,100% { box-shadow: 0 0 8px rgba(118,75,162,0.15); }
-    50% { box-shadow: 0 0 20px rgba(118,75,162,0.4); }
+    50% { box-shadow: 0 0 24px rgba(118,75,162,0.45); }
 }
 .wf-step-id { font-weight: 700; font-size: 0.85rem; color: var(--text-muted); min-width: 40px; }
 .wf-step-name { flex: 1; font-weight: 600; }

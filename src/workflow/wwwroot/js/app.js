@@ -114,7 +114,7 @@ async function runAgent() {
         { id: 'S10', name: 'Human Review Ready' },
     ];
 
-    // Render initial pending steps
+    // Render all steps as queued — no simulated progress
     stepsContainer.innerHTML = stepDefs.map(s =>
         `<div class="wf-step" id="step-${s.id}">
             <span class="wf-step-id">${s.id}</span>
@@ -124,39 +124,28 @@ async function runAgent() {
         </div>`
     ).join('');
 
-    // Animate pre-processing steps (S01–S08)
-    const preProcessSteps = stepDefs.length - 2; // all except S09 (agent call) and S10 (review)
-    for (let i = 0; i < preProcessSteps; i++) {
-        await delay(300);
-        const el = document.getElementById(`step-${stepDefs[i].id}`);
-        el.classList.add('running');
-        el.querySelector('.wf-step-icon').textContent = '⚙️';
-        el.querySelector('.wf-step-detail').textContent = 'Processing...';
-        await delay(400 + Math.random() * 300);
-        el.classList.remove('running');
-        el.classList.add('complete');
-        el.querySelector('.wf-step-icon').textContent = '✅';
-        el.querySelector('.wf-step-detail').textContent = 'Complete';
-    }
+    // Show a banner indicating the full workflow is running in Foundry
+    stepsContainer.insertAdjacentHTML('beforebegin',
+        `<div id="ai-workflow-banner" class="ai-workflow-banner">
+            <span class="ai-banner-icon">🤖</span>
+            <div class="ai-banner-text">
+                <strong>AI Agent Workflow running in Microsoft Foundry</strong>
+                <span id="ai-banner-detail">Invoking Foundry agents — all steps executed server-side...</span>
+            </div>
+        </div>`);
 
-    // Mark S09 as actively calling the AI agent workflow
-    const uwStep = document.getElementById('step-S09');
-    uwStep.classList.add('ai-running');
-    uwStep.querySelector('.wf-step-icon').textContent = '🤖';
-    uwStep.querySelector('.wf-step-detail').textContent = 'AI Agent Workflow invoked — Foundry agents processing loan application...';
-
-    // Animate dots on S09 to show activity while waiting
+    // Animate elapsed timer on the banner
+    const aiStartTime = Date.now();
     let dotCount = 0;
     const dotTimer = setInterval(() => {
         dotCount = (dotCount + 1) % 4;
         const dots = '.'.repeat(dotCount || 1);
         const elapsed = Math.round((Date.now() - aiStartTime) / 1000);
-        uwStep.querySelector('.wf-step-detail').textContent =
-            `AI Agent Workflow invoked — Foundry agents processing loan application${dots} (${elapsed}s)`;
+        document.getElementById('ai-banner-detail').textContent =
+            `Foundry agents processing loan application${dots} (${elapsed}s)`;
     }, 800);
-    const aiStartTime = Date.now();
 
-    // Actually call the agent API
+    // Call the agent API — all workflow steps happen server-side
     try {
         const res = await fetch(`${API}/api/v1/agent/run`, {
             method: 'POST',
@@ -168,23 +157,20 @@ async function runAgent() {
             const errBody = await res.json().catch(() => ({ message: res.statusText }));
             const errMsg = errBody.message || errBody.error || `HTTP ${res.status}`;
             console.error('Agent API error:', res.status, errBody);
-
-            // Mark S09 and remaining steps as failed
             clearInterval(dotTimer);
-            uwStep.classList.remove('ai-running');
-            uwStep.classList.add('error');
-            uwStep.querySelector('.wf-step-icon').textContent = '❌';
-            uwStep.querySelector('.wf-step-detail').textContent = 'AI Agent Workflow failed';
+
+            // Mark all steps as failed
+            const banner = document.getElementById('ai-workflow-banner');
+            banner.classList.add('error');
+            banner.querySelector('.ai-banner-icon').textContent = '❌';
+            banner.querySelector('#ai-banner-detail').textContent = 'Workflow failed';
             stepDefs.forEach(s => {
                 const el = document.getElementById(`step-${s.id}`);
-                if (el && !el.classList.contains('complete') && !el.classList.contains('error')) {
-                    el.classList.add('error');
-                    el.querySelector('.wf-step-icon').textContent = '❌';
-                    el.querySelector('.wf-step-detail').textContent = 'Failed';
-                }
+                el.classList.add('error');
+                el.querySelector('.wf-step-icon').textContent = '❌';
+                el.querySelector('.wf-step-detail').textContent = 'Failed';
             });
 
-            // Show error banner
             stepsContainer.insertAdjacentHTML('afterend',
                 `<div class="agent-error-banner" style="background:#fee;border:2px solid #c00;border-radius:8px;padding:16px;margin-top:16px;color:#900">
                     <strong>⚠️ Agent Workflow Error</strong><br>
@@ -196,30 +182,27 @@ async function runAgent() {
 
         agentResult = await res.json();
         clearInterval(dotTimer);
+        const elapsed = Math.round((Date.now() - aiStartTime) / 1000);
 
-        // Mark S09 as complete — agent workflow returned
-        uwStep.classList.remove('ai-running');
-        uwStep.classList.add('complete');
-        uwStep.querySelector('.wf-step-icon').textContent = '✅';
-        uwStep.querySelector('.wf-step-detail').textContent = 'AI Agent Workflow complete — recommendation ready';
+        // Update banner to show completion
+        const banner = document.getElementById('ai-workflow-banner');
+        banner.classList.add('complete');
+        banner.querySelector('.ai-banner-icon').textContent = '✅';
+        document.getElementById('ai-banner-detail').textContent =
+            `All agents completed successfully (${elapsed}s)`;
 
-        // Mark S10 as complete
-        const reviewStep = document.getElementById('step-S10');
-        reviewStep.classList.add('complete');
-        reviewStep.querySelector('.wf-step-icon').textContent = '✅';
-        reviewStep.querySelector('.wf-step-detail').textContent = 'Complete';
-
-        // Update steps with real data (overrides above if server provides detail)
+        // Populate steps with real data from the server response
         if (agentResult.workflowLog && agentResult.workflowLog.steps) {
-            agentResult.workflowLog.steps.forEach(s => {
+            for (let i = 0; i < agentResult.workflowLog.steps.length; i++) {
+                await delay(150); // brief stagger for visual effect
+                const s = agentResult.workflowLog.steps[i];
                 const el = document.getElementById(`step-${s.stepId}`);
                 if (el) {
-                    el.classList.remove('running');
                     el.classList.add(s.status === 'COMPLETE' ? 'complete' : 'pending');
                     el.querySelector('.wf-step-icon').textContent = s.status === 'COMPLETE' ? '✅' : '⏳';
                     el.querySelector('.wf-step-detail').textContent = s.detail || s.status;
                 }
-            });
+            }
         }
 
         // Show LLM model info
@@ -235,10 +218,12 @@ async function runAgent() {
         showSection('reviewSection');
     } catch (err) {
         clearInterval(dotTimer);
-        uwStep.classList.remove('ai-running');
-        uwStep.classList.add('error');
-        uwStep.querySelector('.wf-step-icon').textContent = '❌';
-        uwStep.querySelector('.wf-step-detail').textContent = 'AI Agent Workflow failed — network error';
+        const banner = document.getElementById('ai-workflow-banner');
+        if (banner) {
+            banner.classList.add('error');
+            banner.querySelector('.ai-banner-icon').textContent = '❌';
+            document.getElementById('ai-banner-detail').textContent = 'Network error — could not reach Foundry';
+        }
         console.error('Agent workflow network error:', err);
         stepsContainer.insertAdjacentHTML('afterend',
             `<div class="agent-error-banner" style="background:#fee;border:2px solid #c00;border-radius:8px;padding:16px;margin-top:16px;color:#900">
