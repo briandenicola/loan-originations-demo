@@ -102,24 +102,28 @@ async function runAgent() {
 
     const stepsContainer = document.getElementById('workflowSteps');
     const stepDefs = [
-        { id: 'S01', name: 'Application Intake' },
-        { id: 'S02', name: 'Agent Parse & Normalize' },
-        { id: 'S03', name: 'API: Credit Profile' },
-        { id: 'S04', name: 'API: Income Verification' },
-        { id: 'S05', name: 'API: Fraud Signals' },
-        { id: 'S06', name: 'API: Policy Thresholds' },
-        { id: 'S07', name: 'Compute DTI & Affordability' },
-        { id: 'S08', name: 'API: Pricing Quote' },
-        { id: 'S09', name: 'Underwriting Recommendation' },
-        { id: 'S10', name: 'Human Review Ready' },
+        { id: 'S01', name: 'Application Intake',           agent: null,                              desc: 'Receive and validate loan application fields' },
+        { id: 'S02', name: 'Data Enrichment',              agent: null,                              desc: 'Gather credit, income, fraud, policy & pricing data' },
+        { id: 'S03', name: 'Credit Profile Analysis',      agent: 'credit_profile_agent',            desc: 'Analyze bureau score, delinquencies & utilization' },
+        { id: 'S04', name: 'Income Verification',          agent: 'income_verification_agent',       desc: 'Verify income, employer match & stability' },
+        { id: 'S05', name: 'Fraud Screening',              agent: 'fraud_screening_agent',           desc: 'Assess identity risk, device & watchlist flags' },
+        { id: 'S06', name: 'Policy Evaluation',            agent: 'policy_evaluation_agent',         desc: 'Evaluate underwriting rules POL-001 – POL-010' },
+        { id: 'S07', name: 'DTI & Affordability',          agent: null,                              desc: 'Compute debt-to-income ratio vs threshold' },
+        { id: 'S08', name: 'Pricing Analysis',             agent: 'pricing_agent',                   desc: 'Validate risk tier, APR & payment calculations' },
+        { id: 'S09', name: 'Loan Orchestrator Agent',      agent: 'loan_orchestrator',               desc: 'Full workflow orchestration via Foundry Agent Service' },
+        { id: 'S10', name: 'Human Review Ready',           agent: null,                              desc: 'Present recommendation for reviewer approval' },
     ];
 
-    // Render all steps as queued — no simulated progress
+    // Render steps with agent info and description
     stepsContainer.innerHTML = stepDefs.map(s =>
         `<div class="wf-step" id="step-${s.id}">
             <span class="wf-step-id">${s.id}</span>
-            <span class="wf-step-name">${s.name}</span>
-            <span class="wf-step-detail">Queued</span>
+            <div class="wf-step-info">
+                <span class="wf-step-name">${s.name}</span>
+                ${s.agent ? `<span class="wf-agent-badge">🤖 ${s.agent}</span>` : '<span class="wf-agent-badge wf-agent-badge-system">⚙️ system</span>'}
+                <span class="wf-step-desc">${s.desc}</span>
+            </div>
+            <span class="wf-step-detail"></span>
             <span class="wf-step-icon">⏳</span>
         </div>`
     ).join('');
@@ -134,16 +138,33 @@ async function runAgent() {
             </div>
         </div>`);
 
-    // Animate elapsed timer on the banner
+    // Animate steps sequentially to show the agent is working through them
     const aiStartTime = Date.now();
-    let dotCount = 0;
-    const dotTimer = setInterval(() => {
-        dotCount = (dotCount + 1) % 4;
-        const dots = '.'.repeat(dotCount || 1);
+    let currentStepIdx = 0;
+    const stepTimer = setInterval(() => {
         const elapsed = Math.round((Date.now() - aiStartTime) / 1000);
+
+        if (currentStepIdx < stepDefs.length) {
+            if (currentStepIdx > 0) {
+                const prev = document.getElementById(`step-${stepDefs[currentStepIdx - 1].id}`);
+                prev.classList.remove('running');
+                prev.classList.add('ai-pending');
+                prev.querySelector('.wf-step-icon').textContent = '🤖';
+                prev.querySelector('.wf-step-detail').textContent = 'Agent processing';
+            }
+            const cur = document.getElementById(`step-${stepDefs[currentStepIdx].id}`);
+            cur.classList.add('running');
+            cur.querySelector('.wf-step-icon').textContent = '⚙️';
+            cur.querySelector('.wf-step-detail').textContent = stepDefs[currentStepIdx].agent
+                ? `Running ${stepDefs[currentStepIdx].agent}...`
+                : 'Processing...';
+            currentStepIdx++;
+        }
+
+        const dots = '.'.repeat((elapsed % 3) + 1);
         document.getElementById('ai-banner-detail').textContent =
             `Foundry agents processing loan application${dots} (${elapsed}s)`;
-    }, 800);
+    }, 2500);
 
     // Call the agent API — all workflow steps happen server-side
     try {
@@ -157,7 +178,7 @@ async function runAgent() {
             const errBody = await res.json().catch(() => ({ message: res.statusText }));
             const errMsg = errBody.message || errBody.error || `HTTP ${res.status}`;
             console.error('Agent API error:', res.status, errBody);
-            clearInterval(dotTimer);
+            clearInterval(stepTimer);
 
             // Mark all steps as failed
             const banner = document.getElementById('ai-workflow-banner');
@@ -166,6 +187,7 @@ async function runAgent() {
             banner.querySelector('#ai-banner-detail').textContent = 'Workflow failed';
             stepDefs.forEach(s => {
                 const el = document.getElementById(`step-${s.id}`);
+                el.classList.remove('running', 'ai-pending');
                 el.classList.add('error');
                 el.querySelector('.wf-step-icon').textContent = '❌';
                 el.querySelector('.wf-step-detail').textContent = 'Failed';
@@ -181,7 +203,7 @@ async function runAgent() {
         }
 
         agentResult = await res.json();
-        clearInterval(dotTimer);
+        clearInterval(stepTimer);
         const elapsed = Math.round((Date.now() - aiStartTime) / 1000);
 
         // Update banner to show completion
@@ -198,13 +220,10 @@ async function runAgent() {
                 const s = agentResult.workflowLog.steps[i];
                 const el = document.getElementById(`step-${s.stepId}`);
                 if (el) {
+                    el.classList.remove('running', 'ai-pending');
                     el.classList.add(s.status === 'COMPLETE' ? 'complete' : 'pending');
                     el.querySelector('.wf-step-icon').textContent = s.status === 'COMPLETE' ? '✅' : '⏳';
                     el.querySelector('.wf-step-detail').textContent = s.detail || s.status;
-                    if (s.agentName) {
-                        el.querySelector('.wf-step-name').insertAdjacentHTML('afterend',
-                            `<span class="wf-agent-badge" title="Foundry Agent: ${s.agentName}">🤖 ${s.agentName}</span>`);
-                    }
                 }
             }
         }
@@ -221,7 +240,7 @@ async function runAgent() {
         renderReviewDashboard();
         showSection('reviewSection');
     } catch (err) {
-        clearInterval(dotTimer);
+        clearInterval(stepTimer);
         const banner = document.getElementById('ai-workflow-banner');
         if (banner) {
             banner.classList.add('error');
