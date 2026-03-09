@@ -26,6 +26,39 @@ resource "azurerm_subnet" "agents" {
   }
 }
 
+resource "azurerm_subnet" "nodes" {
+  lifecycle {
+    ignore_changes = [
+      delegation
+    ]
+  }
+
+  name                 = "nodes"
+  resource_group_name  = azurerm_resource_group.this.name
+  virtual_network_name = azurerm_virtual_network.this.name
+  address_prefixes     = [local.nodes_subnet_cidir]
+}
+
+resource "azapi_update_resource" "nodes_delegation" {
+  type        = "Microsoft.Network/virtualNetworks/subnets@2023-04-01"
+  resource_id = azurerm_subnet.nodes.id
+
+  body = {
+    properties= {
+      delegations = [{
+        name = "Microsoft.App.environment"
+
+        properties = {
+          serviceName = "Microsoft.App/environments"
+          actions = [
+            "Microsoft.Network/virtualNetworks/subnets/join/action"
+          ]
+        }
+      }]
+    }
+  }
+}
+
 resource "azurerm_network_security_group" "this" {
   name                = local.nsg_name
   location            = azurerm_resource_group.core.location
@@ -39,5 +72,10 @@ resource "azurerm_subnet_network_security_group_association" "pe" {
 
 resource "azurerm_subnet_network_security_group_association" "agents" {
   subnet_id                 = azurerm_subnet.agents.id
+  network_security_group_id = azurerm_network_security_group.this.id
+}
+
+resource "azurerm_subnet_network_security_group_association" "nodes" {
+  subnet_id                 = azurerm_subnet.nodes.id
   network_security_group_id = azurerm_network_security_group.this.id
 }

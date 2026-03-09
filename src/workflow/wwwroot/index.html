@@ -1,0 +1,234 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Loan Origination — Microsoft Foundry Agent Demo</title>
+    <link rel="stylesheet" href="/css/styles.css">
+    <!-- Chart.js for visualizations -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+</head>
+<body>
+    <header class="app-header">
+        <div class="header-left">
+            <svg class="logo" viewBox="0 0 24 24" width="32" height="32" fill="currentColor">
+                <path d="M21.17 2.06A13.1 13.1 0 0 0 19 1.87a12.94 12.94 0 0 0-7 2.05 12.94 12.94 0 0 0-7-2 13.1 13.1 0 0 0-2.17.19A1 1 0 0 0 2 3.06v12a1 1 0 0 0 1.17 1 10.9 10.9 0 0 1 1.83-.17 11 11 0 0 1 6 1.78 1 1 0 0 0 1 0 11 11 0 0 1 6-1.78 10.9 10.9 0 0 1 1.83.17A1 1 0 0 0 22 15.06v-12a1 1 0 0 0-.83-.94zM11 15.35a13 13 0 0 0-6-1.48c-.33 0-.66 0-1 .05V3.89a11.07 11.07 0 0 1 1-.06 11 11 0 0 1 6 1.78zm9-1.43c-.34 0-.67 0-1-.05a13 13 0 0 0-6 1.48V5.61a11 11 0 0 1 6-1.78 11.07 11.07 0 0 1 1 .06z"/>
+            </svg>
+            <h1>Loan Origination</h1>
+            <span class="badge badge-foundry">Microsoft Foundry Agent</span>
+        </div>
+        <div class="header-right">
+            <span class="status-dot" id="apiStatus"></span>
+            <span id="apiStatusText">Connecting...</span>
+        </div>
+    </header>
+
+    <main>
+        <!-- ═══════ STEP 1: APPLICATION INTAKE ═══════ -->
+        <section id="intakeSection" class="section active">
+            <div class="section-header">
+                <h2>📋 Loan Application Intake</h2>
+                <p>Select a sample application or enter details manually</p>
+            </div>
+            <div class="card">
+                <div class="form-row">
+                    <label>Select Application</label>
+                    <select id="appSelect" onchange="loadApplication()">
+                        <option value="">— Choose an application —</option>
+                    </select>
+                </div>
+                <div id="appForm" style="display:none">
+                    <div class="form-grid">
+                        <div class="form-group">
+                            <label>Applicant Name</label>
+                            <input type="text" id="fName" readonly>
+                        </div>
+                        <div class="form-group">
+                            <label>Application No</label>
+                            <input type="text" id="fAppNo" readonly>
+                        </div>
+                        <div class="form-group">
+                            <label>Date of Birth</label>
+                            <input type="text" id="fDob" readonly>
+                        </div>
+                        <div class="form-group">
+                            <label>Application Date</label>
+                            <input type="text" id="fDate" readonly>
+                        </div>
+                        <div class="form-group">
+                            <label>Email</label>
+                            <input type="text" id="fEmail" readonly>
+                        </div>
+                        <div class="form-group">
+                            <label>Phone</label>
+                            <input type="text" id="fPhone" readonly>
+                        </div>
+                        <div class="form-group span-2">
+                            <label>Address</label>
+                            <input type="text" id="fAddress" readonly>
+                        </div>
+                    </div>
+                    <hr>
+                    <h3>Loan Details</h3>
+                    <div class="form-grid">
+                        <div class="form-group">
+                            <label>Requested Amount ($)</label>
+                            <input type="number" id="fAmount" readonly>
+                        </div>
+                        <div class="form-group">
+                            <label>Term (months)</label>
+                            <input type="number" id="fTerm" readonly>
+                        </div>
+                        <div class="form-group">
+                            <label>Loan Purpose</label>
+                            <input type="text" id="fPurpose" readonly>
+                        </div>
+                        <div class="form-group">
+                            <label>Loan Type</label>
+                            <input type="text" id="fType" readonly>
+                        </div>
+                    </div>
+                    <hr>
+                    <h3>Financial Profile</h3>
+                    <div class="form-grid">
+                        <div class="form-group">
+                            <label>Gross Annual Income ($)</label>
+                            <input type="number" id="fIncome" readonly>
+                        </div>
+                        <div class="form-group">
+                            <label>Monthly Net Income ($)</label>
+                            <input type="number" id="fMonthly" readonly>
+                        </div>
+                        <div class="form-group">
+                            <label>Monthly Debt Payments ($)</label>
+                            <input type="number" id="fDebt" readonly>
+                        </div>
+                        <div class="form-group">
+                            <label>Housing Payment ($)</label>
+                            <input type="number" id="fHousing" readonly>
+                        </div>
+                    </div>
+                    <div class="form-actions">
+                        <button class="btn btn-primary btn-lg" onclick="runAgent()">
+                            🤖 Run Foundry Agent Workflow
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ═══════ STEP 2: AGENT WORKFLOW PROGRESS ═══════ -->
+        <section id="workflowSection" class="section" style="display:none">
+            <div class="section-header">
+                <h2>🤖 Foundry Agent Workflow</h2>
+                <p>Semantic Kernel orchestrating S01–S10 pipeline</p>
+            </div>
+            <div class="card">
+                <div id="workflowSteps" class="workflow-steps"></div>
+            </div>
+        </section>
+
+        <!-- ═══════ STEP 3: REVIEW DASHBOARD ═══════ -->
+        <section id="reviewSection" class="section" style="display:none">
+            <div class="section-header">
+                <h2>🔍 Human-in-the-Loop Review</h2>
+                <p>Review enriched data and AI recommendation before final decision</p>
+            </div>
+
+            <!-- Recommendation Banner -->
+            <div id="recBanner" class="rec-banner"></div>
+
+            <div class="dashboard-grid">
+                <!-- Left Column: Application + Enrichment Data -->
+                <div class="dash-col">
+                    <div class="card">
+                        <h3>📊 Credit Profile</h3>
+                        <div class="gauge-container">
+                            <canvas id="creditGauge" width="280" height="160"></canvas>
+                            <div id="creditScoreLabel" class="gauge-label"></div>
+                        </div>
+                        <div class="data-grid" id="creditData"></div>
+                    </div>
+
+                    <div class="card">
+                        <h3>💰 Income & Affordability</h3>
+                        <canvas id="dtiChart" width="400" height="200"></canvas>
+                        <div class="data-grid" id="incomeData"></div>
+                    </div>
+
+                    <div class="card">
+                        <h3>🛡️ Fraud & Risk Signals</h3>
+                        <canvas id="fraudChart" width="400" height="200"></canvas>
+                        <div class="data-grid" id="fraudData"></div>
+                    </div>
+                </div>
+
+                <!-- Right Column: Recommendation + Decision -->
+                <div class="dash-col">
+                    <div class="card">
+                        <h3>🧠 AI Recommendation — Explainability</h3>
+                        <div id="recDetail"></div>
+                        <div id="keyFactors"></div>
+                    </div>
+
+                    <div class="card">
+                        <h3>📑 Policy Evaluation</h3>
+                        <div id="policyHits"></div>
+                    </div>
+
+                    <div class="card">
+                        <h3>💳 Loan Quote</h3>
+                        <div id="quoteData"></div>
+                    </div>
+
+                    <div class="card">
+                        <h3>⚙️ Adjust Terms & Recompute</h3>
+                        <div class="form-grid">
+                            <div class="form-group">
+                                <label>Loan Amount ($)</label>
+                                <input type="number" id="adjAmount">
+                            </div>
+                            <div class="form-group">
+                                <label>Term (months)</label>
+                                <input type="number" id="adjTerm">
+                            </div>
+                        </div>
+                        <button class="btn btn-secondary" onclick="recompute()">🔄 Recompute Recommendation</button>
+                    </div>
+
+                    <div class="card decision-card">
+                        <h3>✅ Final Decision</h3>
+                        <div class="form-group">
+                            <label>Reviewer Notes</label>
+                            <textarea id="reviewNotes" rows="3" placeholder="Enter review notes..."></textarea>
+                        </div>
+                        <div class="decision-actions">
+                            <button class="btn btn-approve btn-lg" onclick="submitDecision('APPROVE')">✅ Approve</button>
+                            <button class="btn btn-decline btn-lg" onclick="submitDecision('DECLINE')">❌ Decline</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ═══════ STEP 4: DECISION CONFIRMATION ═══════ -->
+        <section id="decisionSection" class="section" style="display:none">
+            <div class="section-header">
+                <h2>📋 Decision Recorded</h2>
+            </div>
+            <div class="card">
+                <div id="decisionResult"></div>
+                <div class="form-actions">
+                    <button class="btn btn-secondary" onclick="resetApp()">🔄 Process Another Application</button>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <footer>
+        <p>Microsoft Foundry Agent Demo • Semantic Kernel Orchestration • Scenario 2: Loan Origination</p>
+    </footer>
+
+    <script src="/js/app.js"></script>
+</body>
+</html>

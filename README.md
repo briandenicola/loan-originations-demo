@@ -1,8 +1,15 @@
 # Loan Origination
 
-**Microsoft Agent Framework + Azure AI Foundry — Declarative YAML Workflow for Automated Underwriting**
+**Microsoft Agent Framework + Azure AI Foundry — Automated Underwriting with Multi-Agent Orchestration**
 
-A production-style application showcasing Microsoft's Agent Framework and Azure AI Foundry Agent Service for automated loan underwriting. The system uses a **declarative YAML workflow** (`LoanOrigination.yaml`) to orchestrate six specialized AI agents, each responsible for a distinct phase of the underwriting pipeline (S01–S10). A human-in-the-loop review dashboard provides the final decision layer.
+A reference architecture showcasing Microsoft's Agent Framework and Azure AI Foundry Agent Service for automated loan underwriting. The project provides **two parallel implementations** demonstrating the evolution of agent orchestration patterns:
+
+| Implementation | Directory | Orchestration Pattern | SDK |
+|---|---|---|---|
+| **Classic** | `src/classic/` | Agentic — LLM-driven via ConnectedAgentTools | `PersistentAgentsClient` (legacy) |
+| **Workflow** | `src/workflow/` | Declarative YAML — deterministic YAML-defined flow | `AIProjectClient` (new versioned API) |
+
+Both implementations share the same frontend, data layer, and six specialist AI agents. They differ in **how** the agents are orchestrated.
 
 ---
 
@@ -24,18 +31,23 @@ A production-style application showcasing Microsoft's Agent Framework and Azure 
 │  └────────────────────────┬───────────────────────────────────┘  │
 │  ┌────────────────────────▼───────────────────────────────────┐  │
 │  │  LoanAgentOrchestrator                                     │  │
-│  │    ┌──────────────────────────────────────────────┐        │  │
-│  │    │  Declarative YAML Workflow                    │        │  │
-│  │    │  (LoanOrigination.yaml)                      │        │  │
-│  │    │                                              │        │  │
-│  │    │  credit_profile_agent        (gpt-4.1)       │        │  │
-│  │    │  income_verification_agent   (Phi-4-reasoning)│       │  │
-│  │    │  fraud_screening_agent       (gpt-5.2-chat)  │        │  │
-│  │    │  policy_evaluation_agent     (gpt-4.1)       │        │  │
-│  │    │  pricing_agent               (Phi-4-reasoning)│       │  │
-│  │    │  underwriting_recommendation_agent (gpt-5.2) │        │  │
-│  │    └──────────────────────────────────────────────┘        │  │
-│  │    DeclarativeWorkflowBuilder + InProcessExecution          │  │
+│  │                                                            │  │
+│  │   ┌─ Classic ─────────────────────────────────────────┐    │  │
+│  │   │  loan_orchestrator agent (LLM-driven)             │    │  │
+│  │   │  ConnectedAgentTools → 6 specialist agents        │    │  │
+│  │   └───────────────────────────────────────────────────┘    │  │
+│  │                        OR                                  │  │
+│  │   ┌─ Workflow ────────────────────────────────────────┐    │  │
+│  │   │  LoanOrigination.yaml (Declarative YAML)          │    │  │
+│  │   │  DeclarativeWorkflowBuilder → 6 InvokeAzureAgent  │    │  │
+│  │   └───────────────────────────────────────────────────┘    │  │
+│  │                                                            │  │
+│  │    credit-profile-agent         (gpt-4.1)                  │  │
+│  │    income-verification-agent    (Phi-4-reasoning)           │  │
+│  │    fraud-screening-agent        (gpt-5.2-chat)             │  │
+│  │    policy-evaluation-agent      (gpt-4.1)                  │  │
+│  │    pricing-agent                (Phi-4-reasoning)           │  │
+│  │    underwriting-recommendation-agent (gpt-5.2-chat)        │  │
 │  └────────────────────────┬───────────────────────────────────┘  │
 │  ┌────────────────────────▼───────────────────────────────────┐  │
 │  │  LoanAgentPlugins  →  CsvDataService + UnderwritingService │  │
@@ -46,9 +58,34 @@ A production-style application showcasing Microsoft's Agent Framework and Azure 
 
 ---
 
-## Declarative YAML Workflow
+## Classic vs Workflow
 
-The workflow is defined in `src/Agent/Workflow/LoanOrigination.yaml` using the **Microsoft Agent Framework Declarative Workflow** format. The YAML file specifies the full agent orchestration graph — no code-based workflow builder needed:
+### Classic (Agentic Orchestration)
+
+The classic implementation uses a `loan_orchestrator` agent that receives all six specialist agents as **ConnectedAgentTools**. The orchestrator LLM decides which agents to call and in what order.
+
+- **SDK**: `Microsoft.Agents.AI.AzureAI.Persistent` (`PersistentAgentsClient`)
+- **Agent creation**: `CreateAgentAsync(model, name, instructions, tools)`
+- **Orchestration**: LLM-driven — the orchestrator agent controls the flow
+- **Agents**: 6 specialists + 1 orchestrator + 1 health check = **8 agents**
+- **Agent naming**: `credit_profile_agent` (underscores)
+- **Foundry endpoint**: `FOUNDRY_ENDPOINT`
+
+### Workflow (Declarative YAML Orchestration)
+
+The workflow implementation uses a **declarative YAML file** (`LoanOrigination.yaml`) to define the exact agent execution sequence. No orchestrator LLM — the workflow engine controls the flow deterministically.
+
+- **SDK**: `Azure.AI.Projects` 2.0.0-beta.1 (`AIProjectClient`, `PromptAgentDefinition`)
+- **Agent creation**: `CreateAgentVersionAsync(agentName, AgentVersionCreationOptions)` — versioned agents
+- **Orchestration**: YAML-driven — `DeclarativeWorkflowBuilder` + `InProcessExecution`
+- **Agents**: 6 specialists + 1 health check + 1 workflow agent = **8 agents**
+- **Agent naming**: `credit-profile-agent` (hyphens — required by new API)
+- **Workflow registration**: `WorkflowAgentDefinition` with `Foundry-Features: WorkflowAgents=V1Preview` header
+- **Foundry endpoint**: `FOUNDRY_NEXTGEN_ENDPOINT`
+
+### Declarative YAML Workflow
+
+The workflow is defined in `src/workflow/agent_init/workflows/LoanOrigination.yaml`:
 
 ```yaml
 kind: Workflow
@@ -58,52 +95,60 @@ trigger:
   id: loan_underwriting_workflow
   actions:
     - kind: SetVariable           # Capture enriched application data
-    - kind: InvokeAzureAgent      # credit_profile_agent
-    - kind: InvokeAzureAgent      # income_verification_agent
-    - kind: InvokeAzureAgent      # fraud_screening_agent
-    - kind: InvokeAzureAgent      # policy_evaluation_agent
-    - kind: InvokeAzureAgent      # pricing_agent
+    - kind: InvokeAzureAgent      # credit-profile-agent
+    - kind: InvokeAzureAgent      # income-verification-agent
+    - kind: InvokeAzureAgent      # fraud-screening-agent
+    - kind: InvokeAzureAgent      # policy-evaluation-agent
+    - kind: InvokeAzureAgent      # pricing-agent
     - kind: SetTextVariable       # Combine all specialist analyses
-    - kind: InvokeAzureAgent      # underwriting_recommendation_agent
+    - kind: InvokeAzureAgent      # underwriting-recommendation-agent
     - kind: EndWorkflow
 ```
 
-The workflow is loaded at runtime via `DeclarativeWorkflowBuilder.Build<string>()` with an `AzureAgentProvider` that resolves agents by name from Foundry Agent Service. Each agent receives enriched application data and returns its analysis. The final `underwriting_recommendation_agent` receives all combined analyses and produces the recommendation.
+At runtime, `LoanWorkflowRunner` loads the YAML via `DeclarativeWorkflowBuilder.Build<string>()` with an `AzureAgentProvider` that resolves agents by name from Foundry. Each agent receives enriched application data. The final `underwriting-recommendation-agent` receives all combined analyses and produces the recommendation.
 
 ---
 
 ## AI Agents
 
-The application uses **Microsoft Agent Framework** to create and interact with persistent agents hosted in **Azure AI Foundry Agent Service**. Each agent has a system prompt and is backed by a specific model deployment.
-
-### Specialist Agents
+Both implementations create six specialist agents backed by specific model deployments, plus a health check agent.
 
 | Agent | Model | Responsibility |
 |-------|-------|----------------|
-| `credit_profile_agent` | gpt-4.1 | Assesses credit bureau data (score, delinquencies, utilization) |
-| `income_verification_agent` | Phi-4-reasoning | Validates payroll records, employer match, income stability |
-| `fraud_screening_agent` | gpt-5.2-chat | Evaluates identity risk, device risk, watchlist hits, synthetic ID flags |
-| `policy_evaluation_agent` | gpt-4.1 | Evaluates 10 underwriting policy rules (POL-001 through POL-010) |
-| `pricing_agent` | Phi-4-reasoning | Validates APR, monthly payment, payment-to-income ratio |
-| `underwriting_recommendation_agent` | gpt-5.2-chat | Produces final APPROVE / CONDITIONAL / DECLINE with confidence score |
-| `health_check_agent` | gpt-4.1 | Startup connectivity test — confirms Foundry end-to-end health |
+| `credit-profile-agent` | gpt-4.1 | Assesses credit bureau data (score, delinquencies, utilization) |
+| `income-verification-agent` | Phi-4-reasoning | Validates payroll records, employer match, income stability |
+| `fraud-screening-agent` | gpt-5.2-chat | Evaluates identity risk, device risk, watchlist hits, synthetic ID flags |
+| `policy-evaluation-agent` | gpt-4.1 | Evaluates 10 underwriting policy rules (POL-001 through POL-010) |
+| `pricing-agent` | Phi-4-reasoning | Validates APR, monthly payment, payment-to-income ratio |
+| `underwriting-recommendation-agent` | gpt-5.2-chat | Produces final APPROVE / CONDITIONAL / DECLINE with confidence score |
+| `health-check-agent` | gpt-4.1 | Startup connectivity test — confirms Foundry end-to-end health |
+
+> **Note**: Classic uses underscore-separated names (`credit_profile_agent`). Workflow uses hyphen-separated names (`credit-profile-agent`) as required by the new versioned agent API.
 
 ### Agent Initializer CLI
 
-The `agent_init` console app creates all agents in Foundry:
+Each implementation has its own `agent_init` project:
 
 ```bash
-cd src/agent_init
-dotnet run -- --endpoint="https://<resource>.services.ai.azure.com/api/projects/<project>"
+# Classic
+task classic:agents
+
+# Workflow
+task workflow:agents
 ```
 
-The initializer:
-1. Acquires an Entra ID credential (AzureCli → Environment → ManagedIdentity)
-2. Connects to Foundry Agent Service
-3. **Deletes all existing agents** (clean slate)
-4. Loads prompt templates from `prompts/` directory
-5. Creates 6 specialized agents + 1 health check agent
-6. Runs a health check to verify end-to-end connectivity
+Both initializers:
+1. Acquire an Entra ID credential (AzureCli → Environment → ManagedIdentity)
+2. Connect to Foundry Agent Service
+3. **Delete all existing agents** (clean slate)
+4. Load prompt templates from `prompts/` directory
+5. Create 6 specialized agents + 1 health check agent
+6. Verify connectivity
+
+The workflow initializer additionally:
+7. Validates the declarative YAML workflow
+8. Registers a `loan-origination-workflow` agent in Foundry (using `WorkflowAgentDefinition` with `Foundry-Features: WorkflowAgents=V1Preview`)
+9. Copies the YAML to the web app directory
 
 ---
 
@@ -113,22 +158,24 @@ The initializer:
 |------|------|-------------|
 | S01 | Application Intake | Validate and accept the loan application |
 | S02 | Data Enrichment | Call all enrichment APIs (credit, income, fraud, policy, pricing) |
-| S03 | Credit Profile Agent | Bureau score assessment via `credit_profile_agent` |
-| S04 | Income Verification Agent | Payroll validation via `income_verification_agent` |
-| S05 | Fraud Screening Agent | Risk signal evaluation via `fraud_screening_agent` |
-| S06 | Policy Evaluation Agent | 10 policy rules evaluated via `policy_evaluation_agent` |
+| S03 | Credit Profile Agent | Bureau score assessment |
+| S04 | Income Verification Agent | Payroll validation |
+| S05 | Fraud Screening Agent | Risk signal evaluation |
+| S06 | Policy Evaluation Agent | 10 policy rules evaluated |
 | S07 | DTI & Affordability | Compute verified debt-to-income ratio |
-| S08 | Pricing Agent | APR quote, monthly payment via `pricing_agent` |
-| S09 | Underwriting Recommendation | AI-generated rationale via declarative YAML workflow |
+| S08 | Pricing Agent | APR quote, monthly payment |
+| S09 | Underwriting Recommendation | AI-generated rationale via agent orchestration |
 | S10 | Human Review Ready | Package results for human-in-the-loop decision |
 
-Steps S01–S02 and S07 are handled by deterministic data enrichment. Steps S03–S06, S08–S09 are handled by AI agents via the declarative workflow.
+Steps S01–S02 and S07 are deterministic data enrichment. Steps S03–S06, S08–S09 are handled by AI agents.
 
 ---
 
 ## Infrastructure
 
-The `infrastructure/` directory contains Terraform IaC for provisioning the Azure environment.
+The `infrastructure/` directory contains Terraform IaC that provisions **two AI Foundry projects** — one for each implementation.
+
+### Terraform Files
 
 | File | Purpose |
 |------|---------|
@@ -136,14 +183,30 @@ The `infrastructure/` directory contains Terraform IaC for provisioning the Azur
 | `providers.tf` | Azure provider setup |
 | `variables.tf` | Input variables (location, naming, tags) |
 | `rg.tf` | Resource Group |
-| `ai_foundry.tf` | AI Foundry Hub with `disableLocalAuth = true` (Entra ID only) |
-| `ai_foundry_projects.tf` | AI Foundry Project resources and model deployments |
+| `ai_foundry.tf` | AI Foundry Hub (AIServices, S0 SKU, `disableLocalAuth = true`) |
+| `ai_foundry_projects.tf` | Two project modules: `project_classic` and `project_workflow` |
+| `project/` | Shared module for AI Foundry project + model deployments |
 | `network.tf` | VNet, subnets, NSGs, managed network integration |
 | `logging.tf` | Log Analytics Workspace and diagnostics |
-| `roles.tf` | RBAC: Cognitive Services OpenAI User/Contributor, Azure AI Developer/Project Manager |
-| `random.tf` | Random IDs for unique naming |
-| `references.tf` | Data source references (subscription, client config) |
-| `output.tf` | Outputs (endpoint URLs, resource IDs) |
+| `roles.tf` | RBAC: OpenAI User, AI Developer, Project Manager |
+| `output.tf` | Outputs: `FOUNDRY_ENDPOINT`, `FOUNDRY_NEXTGEN_ENDPOINT` |
+
+### Terraform Outputs
+
+| Output | Description |
+|--------|-------------|
+| `APP_NAME` | Resource name |
+| `APP_RESOURCE_GROUP` | Resource group name |
+| `OPENAI_ENDPOINT` | AI Foundry hub endpoint |
+| `FOUNDRY_ENDPOINT` | Classic project endpoint |
+| `FOUNDRY_NEXTGEN_ENDPOINT` | Workflow project endpoint |
+
+### Model Deployments
+
+| Project | Model | Version | SKU |
+|---------|-------|---------|-----|
+| `project_classic` | gpt-4.1 | 2025-04-14 | GlobalStandard (250) |
+| `project_workflow` | gpt-5.2-chat | 2026-02-10 | GlobalStandard (250) |
 
 ### Authentication
 
@@ -159,55 +222,68 @@ All authentication uses **Entra ID** — no API keys. The credential chain:
 
 ```
 scenario2/
-├── infrastructure/           # Terraform IaC for Azure AI Foundry
-│   ├── ai_foundry.tf         # AI Foundry Hub + Agent Service
-│   ├── roles.tf              # RBAC role assignments (Entra ID)
-│   └── ...                   # Network, logging, variables
+├── infrastructure/                # Terraform IaC for Azure AI Foundry
+│   ├── ai_foundry.tf              # AI Foundry Hub + Agent Service
+│   ├── ai_foundry_projects.tf     # Two projects: classic + workflow
+│   ├── project/                   # Shared module for project + model deployments
+│   │   ├── ai_foundry_project.tf
+│   │   ├── ai_foundry_project_models.tf
+│   │   └── ...
+│   ├── roles.tf                   # RBAC role assignments (Entra ID)
+│   ├── output.tf                  # FOUNDRY_ENDPOINT + FOUNDRY_NEXTGEN_ENDPOINT
+│   └── ...                        # Network, logging, variables
 ├── materials/
-│   ├── data/                 # CSV sample data (6 files)
+│   ├── data/                      # CSV sample data (6 files)
 │   │   ├── loan_application_register.csv
 │   │   ├── credit_bureau_extract.csv
 │   │   ├── income_verification_extract.csv
 │   │   ├── fraud_screening_extract.csv
 │   │   ├── policy_thresholds.csv
 │   │   └── product_pricing_matrix.csv
-│   └── openapi.yaml          # API contract specification
-├── output/                   # Generated JSON output files
-├── Taskfile.yaml             # Task runner (up, down, agents, run, sync, etc.)
+│   └── openapi.yaml               # API contract specification
+├── sample-data/                   # PDF loan application examples (4 files)
+├── output/                        # Generated JSON output files
+├── Taskfile.yaml                  # Root task runner (up, down, init, apply)
+├── Taskfile.classic.yaml          # Classic-specific tasks (classic:agents, classic:run, etc.)
+├── Taskfile.workflow.yaml         # Workflow-specific tasks (workflow:agents, workflow:run, etc.)
+│
 └── src/
-    ├── LoanOrigination.csproj
-    ├── Program.cs             # App bootstrap, DI, startup health check
-    ├── appsettings.json       # Foundry endpoint config
-    ├── Agent/
-    │   ├── LoanAgentOrchestrator.cs  # Workflow orchestration + data enrichment
-    │   └── Workflow/
-    │       ├── LoanOrigination.yaml  # ★ Declarative YAML workflow definition
-    │       ├── LoanWorkflowRunner.cs # Loads YAML + executes via DeclarativeWorkflowBuilder
-    │       ├── LoanExecutors.cs      # Custom executors (intake, bridge, aggregation)
-    │       └── LoanWorkflowState.cs  # Shared workflow state model
-    ├── Controllers/
-    │   ├── AgentController.cs        # /api/v1/agent endpoints (503/500 error handling)
-    │   └── LoanApiController.cs      # /api/v1/ data endpoints
-    ├── Models/
-    │   └── LoanModels.cs             # Domain models
-    ├── Services/
-    │   ├── CsvDataService.cs         # CSV data loader
-    │   └── UnderwritingService.cs    # Pricing engine + policy evaluation
-    ├── wwwroot/                      # SPA frontend
-    │   ├── index.html
-    │   ├── css/styles.css
-    │   └── js/app.js                 # Error banners for agent failures
-    └── agent_init/                   # Agent initializer CLI
-        ├── LoanOrigination.AgentInit.csproj
-        ├── Program.cs                # Creates 7 agents in Foundry (deletes existing first)
-        └── prompts/                  # System prompts for each agent
-            ├── CreditProfileAgentPrompt.txt
-            ├── IncomeVerificationAgentPrompt.txt
-            ├── FraudScreeningAgentPrompt.txt
-            ├── PolicyEvaluationAgentPrompt.txt
-            ├── PricingAgentPrompt.txt
-            ├── UnderwritingAgentPrompt.txt
-            └── HealthCheckAgentPrompt.txt
+    ├── classic/                   # ── Classic Implementation ──────────────
+    │   ├── LoanOrigination.csproj
+    │   ├── Program.cs             # PersistentAgentsClient + startup health check
+    │   ├── appsettings.json       # OrchestratorAgentName: loan_orchestrator
+    │   ├── Dockerfile
+    │   ├── Agent/
+    │   │   └── LoanAgentOrchestrator.cs   # Agentic orchestration via ConnectedAgentTools
+    │   ├── Controllers/
+    │   ├── Models/
+    │   ├── Services/
+    │   ├── wwwroot/               # SPA frontend
+    │   └── agent_init/            # Classic agent initializer
+    │       ├── LoanOrigination.AgentInit.csproj
+    │       ├── Program.cs         # Creates 8 agents (6 + orchestrator + health check)
+    │       └── prompts/           # System prompts (7 files)
+    │
+    └── workflow/                  # ── Workflow Implementation ─────────────
+        ├── LoanOrigination.csproj
+        ├── Program.cs             # AIProjectClient + startup health check
+        ├── appsettings.json       # WorkflowPattern: DeclarativeYaml
+        ├── Dockerfile
+        ├── Agent/
+        │   ├── LoanAgentOrchestrator.cs   # YAML workflow orchestration
+        │   └── Workflow/
+        │       ├── LoanOrigination.yaml   # ★ Declarative YAML workflow definition
+        │       └── LoanWorkflowRunner.cs  # DeclarativeWorkflowBuilder + InProcessExecution
+        ├── Controllers/
+        ├── Models/
+        ├── Services/
+        ├── wwwroot/               # SPA frontend
+        └── agent_init/            # Workflow agent initializer
+            ├── LoanOrigination.AgentInit.csproj
+            ├── Program.cs         # Creates 8 agents (6 + health check + workflow)
+            ├── prompts/           # System prompts (7 files)
+            └── workflows/
+                └── LoanOrigination.yaml  # YAML template for workflow registration
 ```
 
 ---
@@ -224,11 +300,16 @@ scenario2/
 ### Quick Start with Taskfile
 
 ```bash
-# Provision infrastructure, sync config, and create agents
+# Provision infrastructure
 task up
 
-# Run the web application
-task run
+# ── Run the Classic implementation ──
+task classic:agents    # Create agents in Foundry
+task classic:run       # Run on http://localhost:8081
+
+# ── Run the Workflow implementation ──
+task workflow:agents   # Create agents + workflow in Foundry
+task workflow:run      # Run on http://localhost:8081
 ```
 
 ### Manual Steps
@@ -241,23 +322,29 @@ terraform init
 terraform apply
 ```
 
-#### 2. Initialize Agents in Foundry
+#### 2. Initialize Agents
 
 ```bash
-cd src/agent_init
-dotnet run -- --endpoint="https://<resource>.services.ai.azure.com/api/projects/<project>"
-```
+# Classic
+cd src/classic/agent_init
+dotnet run -- --endpoint="$(terraform -chdir=../../infrastructure output -raw FOUNDRY_ENDPOINT)"
 
-This deletes any existing agents, then creates 6 specialized agents + 1 health check agent in Foundry.
+# Workflow
+cd src/workflow/agent_init
+dotnet run -- --endpoint="$(terraform -chdir=../../infrastructure output -raw FOUNDRY_NEXTGEN_ENDPOINT)"
+```
 
 #### 3. Run the Web Application
 
 ```bash
-cd src
-dotnet run --urls "http://localhost:8081"
+# Classic
+cd src/classic && dotnet run --urls "http://localhost:8081"
+
+# Workflow
+cd src/workflow && dotnet run --urls "http://localhost:8081"
 ```
 
-On startup, the application runs a health check against the `health_check_agent` in Foundry to verify end-to-end connectivity.
+On startup, the application runs a health check against the health check agent in Foundry to verify end-to-end connectivity.
 
 ### 4. Use the Application
 
@@ -274,19 +361,36 @@ On startup, the application runs a health check against the `health_check_agent`
 
 ## Taskfile Commands
 
+### Root Tasks
+
 | Command | Description |
 |---------|-------------|
-| `task up` | Full provisioning: init → apply → sync → agents |
+| `task up` | Full provisioning: init → apply |
 | `task init` | Initialize Terraform workspace |
 | `task apply` | Apply Terraform infrastructure |
-| `task agents` | Create agents in Foundry (reads endpoint from Terraform output) |
-| `task sync` | Sync Foundry endpoint from Terraform to appsettings.json |
-| `task build` | Build the .NET web application |
-| `task run` | Run the web application on port 8081 |
-| `task clean` | Clean build artifacts |
 | `task down` | Destroy all Azure resources and clean up Terraform state |
-| `task docker-build` | Build Docker container |
-| `task docker-run` | Run Docker container locally |
+
+### Classic Tasks (`task classic:*`)
+
+| Command | Description |
+|---------|-------------|
+| `task classic:agents` | Create agents in Foundry (reads `FOUNDRY_ENDPOINT` from Terraform) |
+| `task classic:build` | Build the .NET web application |
+| `task classic:run` | Run the web application on port 8081 |
+| `task classic:clean` | Clean build artifacts |
+| `task classic:docker-build` | Build Docker container (tagged `loan-origination:classic`) |
+| `task classic:docker-run` | Run Docker container locally |
+
+### Workflow Tasks (`task workflow:*`)
+
+| Command | Description |
+|---------|-------------|
+| `task workflow:agents` | Create agents + workflow in Foundry (reads `FOUNDRY_NEXTGEN_ENDPOINT`) |
+| `task workflow:build` | Build the .NET web application |
+| `task workflow:run` | Run the web application on port 8081 |
+| `task workflow:clean` | Clean build artifacts |
+| `task workflow:docker-build` | Build Docker container (tagged `loan-origination:workflow`) |
+| `task workflow:docker-run` | Run Docker container locally |
 
 ---
 
@@ -307,6 +411,20 @@ The workflow produces four JSON files in the `output/` directory:
 
 ### appsettings.json
 
+**Classic:**
+```json
+{
+  "AzureOpenAI": {
+    "Endpoint": "https://<resource>.services.ai.azure.com/api/projects/<project>",
+    "DeploymentName": "gpt-4.1"
+  },
+  "Foundry": {
+    "OrchestratorAgentName": "loan_orchestrator"
+  }
+}
+```
+
+**Workflow:**
 ```json
 {
   "AzureOpenAI": {
@@ -326,19 +444,31 @@ The workflow produces four JSON files in the `output/` directory:
 | `AZURE_TENANT_ID` | Entra ID tenant for service principal auth |
 | `AZURE_CLIENT_ID` | Service principal application ID |
 | `AZURE_CLIENT_SECRET` | Service principal secret |
-| `FOUNDRY_ENDPOINT` | Alternative to appsettings for agent init CLI |
+| `FOUNDRY_ENDPOINT` | Foundry endpoint for classic implementation |
+| `FOUNDRY_NEXTGEN_ENDPOINT` | Foundry endpoint for workflow implementation |
 
 ---
 
 ## Key Packages
 
+### Classic
+
 | Package | Version | Purpose |
 |---------|---------|---------|
-| `Microsoft.Agents.AI.AzureAI.Persistent` | 1.0.0-preview | Agent Framework — `PersistentAgentsClient`, `AIAgent`, `RunAsync` |
-| `Microsoft.Agents.AI.Workflows` | 1.0.0-rc3 | Workflow engine — `WorkflowBuilder`, `InProcessExecution`, `Executor<T>` |
-| `Microsoft.Agents.AI.Workflows.Declarative` | 1.0.0-rc3 | Declarative YAML parser — `DeclarativeWorkflowBuilder.Build<T>()` |
-| `Microsoft.Agents.AI.Workflows.Declarative.AzureAI` | 1.0.0-rc3 | Azure agent provider — `AzureAgentProvider` for Foundry agent resolution |
-| `Azure.Identity` | 1.18.0 | Entra ID authentication (ManagedIdentity, Environment, AzureCli) |
+| `Microsoft.Agents.AI.AzureAI.Persistent` | 1.0.0-preview | Agent Framework — `PersistentAgentsClient`, `AIAgent`, ConnectedAgentTools |
+| `Azure.Identity` | 1.18.0 | Entra ID authentication |
+| `CsvHelper` | 33.0.1 | CSV data file parsing |
+
+### Workflow
+
+| Package | Version | Purpose |
+|---------|---------|---------|
+| `Azure.AI.Projects` | 2.0.0-beta.1 | New agent API — `AIProjectClient`, `CreateAgentVersionAsync` |
+| `Azure.AI.Projects.OpenAI` | 2.0.0-beta.1 | `PromptAgentDefinition`, `WorkflowAgentDefinition` |
+| `Microsoft.Agents.AI.Workflows` | 1.0.0-rc3 | Workflow engine — `InProcessExecution` |
+| `Microsoft.Agents.AI.Workflows.Declarative` | 1.0.0-rc3 | Declarative YAML — `DeclarativeWorkflowBuilder.Build<T>()` |
+| `Microsoft.Agents.AI.Workflows.Declarative.AzureAI` | 1.0.0-rc3 | `AzureAgentProvider` for Foundry agent resolution |
+| `Azure.Identity` | 1.18.0 | Entra ID authentication |
 | `CsvHelper` | 33.0.1 | CSV data file parsing |
 
 ---

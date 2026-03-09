@@ -7,8 +7,16 @@ vars:
   TITLE: Loan Origination
   DEFAULT_REGION: eastus2
   APP_PORT: 8081
-  ENDPOINT_POINT: FOUNDRY_NEXTGEN_ENDPOINT
 
+includes:
+  workflow: 
+    taskfile: ./Taskfile.workflow.yaml
+    internal: false
+
+  classic: 
+    taskfile: ./Taskfile.classic.yaml
+    internal: false
+  
 tasks:
   default:
     cmds:
@@ -19,9 +27,7 @@ tasks:
     cmds:
       - task: init
       - task: apply
-      - task: sync
-      - task: agents
-
+  
   init:
     desc: Initializes Terraform for {{.TITLE}}
     cmds:
@@ -39,71 +45,6 @@ tasks:
         -var "tags={{.TITLE}}"
     vars:
       REGION: "{{default .DEFAULT_REGION .CLI_ARGS}}"
-
-  plan:
-    desc: Plans Terraform changes for {{.TITLE}}
-    cmds:
-      - terraform -chdir=./infrastructure plan -compact-warnings
-        -var "region={{.REGION}}"
-        -var "tags={{.TITLE}}"
-    vars:
-      REGION: "{{default .DEFAULT_REGION .CLI_ARGS}}"
-
-  agents:
-    desc: Initializes AI agents in Microsoft Foundry
-    dir: ./src/agent_init
-    cmds:
-      - dotnet run -- --endpoint={{.FOUNDRY_ENDPOINT}}
-    vars:
-      FOUNDRY_ENDPOINT:
-        sh: terraform -chdir=../../infrastructure output -raw {{.ENDPOINT_POINT}}
-
-  build:
-    desc: Builds the .NET web application
-    dir: ./src
-    cmds:
-      - dotnet build
-
-  run:
-    desc: Runs the {{.TITLE}} web application on port {{.APP_PORT}}
-    dir: ./src
-    cmds:
-      - dotnet run --urls "http://localhost:{{.APP_PORT}}"
-
-  test:
-    desc: Runs unit tests
-    dir: ./src
-    cmds:
-      - dotnet test
-
-  restore:
-    desc: Restores NuGet packages
-    dir: ./src
-    cmds:
-      - dotnet restore
-
-  clean:
-    desc: Cleans build artifacts
-    cmds:
-      - cmd: Remove-Item -Recurse -Force src/bin, src/obj -ErrorAction SilentlyContinue
-      - cmd: Remove-Item -Recurse -Force src/agent_init/bin, src/agent_init/obj -ErrorAction SilentlyContinue
-
-  docker-build:
-    desc: Builds Docker container for {{.TITLE}}
-    cmds:
-      - docker build -t loan-origination:{{.COMMIT_VERSION}} -t loan-origination:latest .
-    vars:
-      COMMIT_VERSION:
-        sh: git rev-parse HEAD | cut -c 1-8
-
-  docker-run:
-    desc: Runs the Docker container locally
-    cmds:
-      - docker run --rm -p {{.APP_PORT}}:8080
-        -e AZURE_TENANT_ID=$AZURE_TENANT_ID
-        -e AZURE_CLIENT_ID=$AZURE_CLIENT_ID
-        -e AZURE_CLIENT_SECRET=$AZURE_CLIENT_SECRET
-        loan-origination:latest
 
   down:
     desc: Destroys all Azure resources and cleans up Terraform

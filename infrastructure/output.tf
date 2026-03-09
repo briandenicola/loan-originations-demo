@@ -14,10 +14,10 @@ output "OPENAI_ENDPOINT" {
 }
 
 output "FOUNDRY_ENDPOINT" {
-    value = module.project_1.PROJECT_ENDPOINT
+    value = module.project_classic.PROJECT_ENDPOINT
     sensitive = false
 }
 output "FOUNDRY_NEXTGEN_ENDPOINT" {
-    value = module.project_2.PROJECT_ENDPOINT
+    value = module.project_workflow.PROJECT_ENDPOINT
     sensitive = false
 }

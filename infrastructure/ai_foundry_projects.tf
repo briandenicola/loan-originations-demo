@@ -1,12 +1,12 @@
 
-module "project_1" {
+module "project_classic" {
   depends_on = [
     azapi_resource.ai_foundry,
   ]
   source   = "./project"
 
   foundry_project = {
-    name          = local.project_name
+    name          = "${local.project_name}-classic"
     location      = local.location
     resource_name = local.resource_name
     tag           = var.tags
@@ -29,7 +29,7 @@ module "project_1" {
 }
 
 
-module "project_2" {
+module "project_workflow" {
   depends_on = [
     azapi_resource.ai_foundry,
     module.project_1
@@ -37,7 +37,7 @@ module "project_2" {
   source   = "./project"
 
   foundry_project = {
-    name          = "${local.project_name}-nextgen"
+    name          = "${local.project_name}-workflow"
     location      = local.location
     resource_name = local.resource_name
     tag           = var.tags
