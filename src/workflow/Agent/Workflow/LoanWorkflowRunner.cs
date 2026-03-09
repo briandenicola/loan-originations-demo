@@ -43,9 +43,9 @@ public class LoanWorkflowRunner
         var agentProvider = new AzureAgentProvider(
             _foundryEndpoint,
             new ChainedTokenCredential(
-                new ManagedIdentityCredential(ManagedIdentityId.SystemAssigned),
+                new AzureCliCredential(),
                 new EnvironmentCredential(),
-                new AzureCliCredential()));
+                new ManagedIdentityCredential(ManagedIdentityId.SystemAssigned)));
 
         var options = new DeclarativeWorkflowOptions(agentProvider)
         {
