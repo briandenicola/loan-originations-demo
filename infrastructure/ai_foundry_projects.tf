@@ -52,8 +52,8 @@ module "project_workflow" {
     }
 
     models        = [{
-      name     = "gpt-4.1"
-      version  = "2025-04-14"
+      name     = "gpt-5.2"
+      version  = "2025-12-11"
       format   = "OpenAI"
     }]
   }
