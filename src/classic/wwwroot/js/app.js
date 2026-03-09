@@ -194,13 +194,17 @@ async function runAgent() {
         // Populate steps with real data from the server response
         if (agentResult.workflowLog && agentResult.workflowLog.steps) {
             for (let i = 0; i < agentResult.workflowLog.steps.length; i++) {
-                await delay(150); // brief stagger for visual effect
+                await delay(150);
                 const s = agentResult.workflowLog.steps[i];
                 const el = document.getElementById(`step-${s.stepId}`);
                 if (el) {
                     el.classList.add(s.status === 'COMPLETE' ? 'complete' : 'pending');
                     el.querySelector('.wf-step-icon').textContent = s.status === 'COMPLETE' ? '✅' : '⏳';
                     el.querySelector('.wf-step-detail').textContent = s.detail || s.status;
+                    if (s.agentName) {
+                        el.querySelector('.wf-step-name').insertAdjacentHTML('afterend',
+                            `<span class="wf-agent-badge" title="Foundry Agent: ${s.agentName}">🤖 ${s.agentName}</span>`);
+                    }
                 }
             }
         }

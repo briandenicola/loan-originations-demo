@@ -324,13 +324,13 @@ public class LoanAgentOrchestrator
         {
             new() { StepId = "S01", StepName = "Application Intake", Status = "COMPLETE", Timestamp = DateTime.UtcNow.ToString("o"), Detail = $"Application {applicationNo} received" },
             new() { StepId = "S02", StepName = "Data Enrichment", Status = "COMPLETE", Timestamp = DateTime.UtcNow.ToString("o"), Detail = "All enrichment APIs called" },
-            new() { StepId = "S03", StepName = "Credit Profile Agent", Status = "COMPLETE", Timestamp = DateTime.UtcNow.ToString("o"), Detail = $"Bureau score: {credit?.BureauScore} ({credit?.ScoreBand})" },
-            new() { StepId = "S04", StepName = "Income Verification Agent", Status = "COMPLETE", Timestamp = DateTime.UtcNow.ToString("o"), Detail = $"Status: {income?.VerificationStatus}, Verified: ${income?.VerifiedMonthlyIncome}/mo" },
-            new() { StepId = "S05", StepName = "Fraud Screening Agent", Status = "COMPLETE", Timestamp = DateTime.UtcNow.ToString("o"), Detail = $"Identity risk: {fraud?.IdentityRiskScore}, Manual review: {fraud?.RecommendedManualReview}" },
-            new() { StepId = "S06", StepName = "Policy Evaluation", Status = "COMPLETE", Timestamp = DateTime.UtcNow.ToString("o"), Detail = $"{thresholds.Count} rules evaluated" },
+            new() { StepId = "S03", StepName = "Credit Profile Agent", Status = "COMPLETE", Timestamp = DateTime.UtcNow.ToString("o"), Detail = $"Bureau score: {credit?.BureauScore} ({credit?.ScoreBand})", AgentName = "credit-profile-agent" },
+            new() { StepId = "S04", StepName = "Income Verification Agent", Status = "COMPLETE", Timestamp = DateTime.UtcNow.ToString("o"), Detail = $"Status: {income?.VerificationStatus}, Verified: ${income?.VerifiedMonthlyIncome}/mo", AgentName = "income-verification-agent" },
+            new() { StepId = "S05", StepName = "Fraud Screening Agent", Status = "COMPLETE", Timestamp = DateTime.UtcNow.ToString("o"), Detail = $"Identity risk: {fraud?.IdentityRiskScore}, Manual review: {fraud?.RecommendedManualReview}", AgentName = "fraud-screening-agent" },
+            new() { StepId = "S06", StepName = "Policy Evaluation", Status = "COMPLETE", Timestamp = DateTime.UtcNow.ToString("o"), Detail = $"{thresholds.Count} rules evaluated", AgentName = "policy-evaluation-agent" },
             new() { StepId = "S07", StepName = "DTI & Affordability", Status = "COMPLETE", Timestamp = DateTime.UtcNow.ToString("o"), Detail = $"Verified DTI: {verifiedDti:P1}" },
-            new() { StepId = "S08", StepName = "Pricing", Status = "COMPLETE", Timestamp = DateTime.UtcNow.ToString("o"), Detail = $"APR: {quote.AprPct}%, Payment: ${quote.EstimatedMonthlyPayment}/mo" },
-            new() { StepId = "S09", StepName = "Underwriting Agent (Declarative Workflow)", Status = "COMPLETE", Timestamp = DateTime.UtcNow.ToString("o"), Detail = $"AI rationale generated via Declarative YAML Workflow [{workflowResult.DurationMs}ms]" },
+            new() { StepId = "S08", StepName = "Pricing", Status = "COMPLETE", Timestamp = DateTime.UtcNow.ToString("o"), Detail = $"APR: {quote.AprPct}%, Payment: ${quote.EstimatedMonthlyPayment}/mo", AgentName = "pricing-agent" },
+            new() { StepId = "S09", StepName = "Underwriting Agent (Declarative Workflow)", Status = "COMPLETE", Timestamp = DateTime.UtcNow.ToString("o"), Detail = $"AI rationale generated via Declarative YAML Workflow [{workflowResult.DurationMs}ms]", AgentName = "loan-origination-workflow" },
             new() { StepId = "S10", StepName = "Human Review Ready", Status = "PENDING", Timestamp = DateTime.UtcNow.ToString("o"), Detail = "Awaiting reviewer decision" },
         };
 

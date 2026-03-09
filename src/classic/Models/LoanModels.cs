@@ -162,6 +162,7 @@ public class WorkflowStep
     public string Status { get; set; } = "";
     public string Timestamp { get; set; } = "";
     public string? Detail { get; set; }
+    public string? AgentName { get; set; }
 }
 
 // ── Decision ──

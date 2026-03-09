@@ -332,9 +332,9 @@ public class LoanAgentOrchestrator
         var steps = new List<WorkflowStep>();
         string Ts() => DateTime.UtcNow.ToString("o");
 
-        void Log(string id, string name, string status, string? detail = null)
+        void Log(string id, string name, string status, string? detail = null, string? agentName = null)
         {
-            steps.Add(new WorkflowStep { StepId = id, StepName = name, Status = status, Timestamp = Ts(), Detail = detail });
+            steps.Add(new WorkflowStep { StepId = id, StepName = name, Status = status, Timestamp = Ts(), Detail = detail, AgentName = agentName });
             _logger.LogInformation("[{RunId}] {StepId} {StepName}: {Status} — {Detail}", runId, id, name, status, detail);
         }
 
@@ -399,12 +399,12 @@ public class LoanAgentOrchestrator
         _logger.LogDebug("[{RunId}] Enriched context size: {Size} chars", runId, enrichedContext.Length);
 
         Log("S02", "Data Enrichment", "COMPLETE", "All enrichment APIs called (credit, income, fraud, policy, pricing)");
-        Log("S03", "Credit Profile Agent", "COMPLETE", $"Bureau score: {credit?.BureauScore} ({credit?.ScoreBand})");
-        Log("S04", "Income Verification Agent", "COMPLETE", $"Status: {income?.VerificationStatus}, Verified: ${income?.VerifiedMonthlyIncome}/mo");
-        Log("S05", "Fraud Screening Agent", "COMPLETE", $"Identity risk: {fraud?.IdentityRiskScore}, Manual review: {fraud?.RecommendedManualReview}");
-        Log("S06", "Policy Evaluation Agent", "COMPLETE", $"{thresholds.Count} rules evaluated, {rec.PolicyHits.Count(h => h.Outcome != "PASS")} flags");
+        Log("S03", "Credit Profile Agent", "COMPLETE", $"Bureau score: {credit?.BureauScore} ({credit?.ScoreBand})", "credit_profile_agent");
+        Log("S04", "Income Verification Agent", "COMPLETE", $"Status: {income?.VerificationStatus}, Verified: ${income?.VerifiedMonthlyIncome}/mo", "income_verification_agent");
+        Log("S05", "Fraud Screening Agent", "COMPLETE", $"Identity risk: {fraud?.IdentityRiskScore}, Manual review: {fraud?.RecommendedManualReview}", "fraud_screening_agent");
+        Log("S06", "Policy Evaluation Agent", "COMPLETE", $"{thresholds.Count} rules evaluated, {rec.PolicyHits.Count(h => h.Outcome != "PASS")} flags", "policy_evaluation_agent");
         Log("S07", "DTI & Affordability", "COMPLETE", $"Verified DTI: {verifiedDti:P1}");
-        Log("S08", "Pricing Agent", "COMPLETE", $"APR: {quote.AprPct}%, Payment: ${quote.EstimatedMonthlyPayment}/mo");
+        Log("S08", "Pricing Agent", "COMPLETE", $"APR: {quote.AprPct}%, Payment: ${quote.EstimatedMonthlyPayment}/mo", "pricing_agent");
 
         // ── S09: Run the Foundry orchestrator agent via Agent Framework ──────
         string agentRationale;
@@ -463,7 +463,8 @@ public class LoanAgentOrchestrator
             _logger.LogTrace("[{RunId}] Agent response text:\n{Rationale}", runId, agentRationale);
 
             Log("S09", "Orchestrator Agent Analysis (Foundry)", "COMPLETE",
-                $"AI rationale generated via Foundry Agent Service [thread={threadId}, run={foundryRunId}, duration={agentSw.ElapsedMilliseconds}ms]");
+                $"AI rationale generated via Foundry Agent Service [thread={threadId}, run={foundryRunId}, duration={agentSw.ElapsedMilliseconds}ms]",
+                "loan_orchestrator");
         }
         catch (Exception ex)
         {
