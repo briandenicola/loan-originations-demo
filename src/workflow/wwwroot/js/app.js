@@ -7,46 +7,116 @@ let currentApp = null;
 let agentResult = null;
 let chartInstances = {};
 
-// ── Simple Markdown → HTML renderer ──────────────────────────
+// ── Markdown → HTML renderer ─────────────────────────────────
 function renderMarkdown(md) {
     if (!md) return '';
-    let html = md
-        // Escape HTML entities first
-        .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
-        // Headings (### → h4, ## → h3, # → h2)
-        .replace(/^### (.+)$/gm, '<h4>$1</h4>')
-        .replace(/^## (.+)$/gm, '<h3>$1</h3>')
-        .replace(/^# (.+)$/gm, '<h2>$1</h2>')
-        // Horizontal rules
-        .replace(/^---+$/gm, '<hr>')
-        // Bold
-        .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
-        // Italic
-        .replace(/\*(.+?)\*/g, '<em>$1</em>')
-        // Inline code
-        .replace(/`(.+?)`/g, '<code>$1</code>')
-        // Blockquotes (handle multi-line)
-        .replace(/^&gt; (.+)$/gm, '<blockquote>$1</blockquote>')
-        // Unordered lists
-        .replace(/^- (.+)$/gm, '<li>$1</li>')
-        // Line breaks for remaining newlines
-        .replace(/\n/g, '<br>');
 
-    // Wrap consecutive <li> in <ul>
-    html = html.replace(/((?:<li>.*?<\/li><br>?)+)/g, (m) => {
-        return '<ul>' + m.replace(/<br>/g, '') + '</ul>';
-    });
+    const esc = s => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 
-    // Merge consecutive blockquotes
-    html = html.replace(/<\/blockquote><br><blockquote>/g, '<br>');
+    // Inline formatting (bold, italic, inline code)
+    function inlineFmt(s) {
+        return s
+            .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+            .replace(/\*(.+?)\*/g, '<em>$1</em>')
+            .replace(/`(.+?)`/g, '<code>$1</code>');
+    }
 
-    // Clean up extra <br> after block elements
-    html = html.replace(/(<\/h[2-4]>)<br>/g, '$1');
-    html = html.replace(/(<hr>)<br>/g, '$1');
-    html = html.replace(/(<\/ul>)<br>/g, '$1');
-    html = html.replace(/(<\/blockquote>)<br>/g, '$1');
+    const lines = md.split('\n');
+    const out = [];
+    let i = 0;
 
-    return html;
+    while (i < lines.length) {
+        const raw = lines[i];
+        const line = esc(raw);
+
+        // ── Markdown table block ────────────────────────────
+        if (/^\|(.+)\|/.test(line)) {
+            let rows = [];
+            while (i < lines.length && /^\|(.+)\|/.test(esc(lines[i]))) {
+                rows.push(esc(lines[i]));
+                i++;
+            }
+            if (rows.length >= 2) {
+                const parseRow = r => r.split('|').slice(1, -1).map(c => inlineFmt(c.trim()));
+                const headers = parseRow(rows[0]);
+                // Skip the separator row (|---|---|)
+                const sepIdx = rows.findIndex(r => /^\|[\s\-:|]+\|$/.test(r));
+                const dataStart = sepIdx >= 0 ? sepIdx + 1 : 1;
+                let tbl = '<table><thead><tr>' +
+                    headers.map(h => `<th>${h}</th>`).join('') +
+                    '</tr></thead><tbody>';
+                for (let r = dataStart; r < rows.length; r++) {
+                    const cells = parseRow(rows[r]);
+                    tbl += '<tr>' + cells.map(c => `<td>${c}</td>`).join('') + '</tr>';
+                }
+                tbl += '</tbody></table>';
+                out.push(tbl);
+            } else {
+                out.push(inlineFmt(rows.join('<br>')));
+            }
+            continue;
+        }
+
+        // ── Headings ────────────────────────────────────────
+        const h3 = line.match(/^### (.+)$/);
+        if (h3) { out.push(`<h4>${inlineFmt(h3[1])}</h4>`); i++; continue; }
+        const h2 = line.match(/^## (.+)$/);
+        if (h2) { out.push(`<h3>${inlineFmt(h2[1])}</h3>`); i++; continue; }
+        const h1 = line.match(/^# (.+)$/);
+        if (h1) { out.push(`<h2>${inlineFmt(h1[1])}</h2>`); i++; continue; }
+
+        // ── Horizontal rule ─────────────────────────────────
+        if (/^---+$/.test(line)) { out.push('<hr>'); i++; continue; }
+
+        // ── Blockquote ──────────────────────────────────────
+        if (/^&gt; /.test(line)) {
+            let bq = [];
+            while (i < lines.length && /^&gt; /.test(esc(lines[i]))) {
+                bq.push(inlineFmt(esc(lines[i]).replace(/^&gt; /, '')));
+                i++;
+            }
+            out.push(`<blockquote>${bq.join('<br>')}</blockquote>`);
+            continue;
+        }
+
+        // ── Unordered list ──────────────────────────────────
+        if (/^- (.+)$/.test(line)) {
+            let items = [];
+            while (i < lines.length && /^- (.+)$/.test(esc(lines[i]))) {
+                items.push(`<li>${inlineFmt(esc(lines[i]).replace(/^- /, ''))}</li>`);
+                i++;
+            }
+            out.push(`<ul>${items.join('')}</ul>`);
+            continue;
+        }
+
+        // ── Ordered list ────────────────────────────────────
+        if (/^\d+\. (.+)$/.test(line)) {
+            let items = [];
+            while (i < lines.length && /^\d+\. (.+)$/.test(esc(lines[i]))) {
+                items.push(`<li>${inlineFmt(esc(lines[i]).replace(/^\d+\. /, ''))}</li>`);
+                i++;
+            }
+            out.push(`<ol>${items.join('')}</ol>`);
+            continue;
+        }
+
+        // ── Blank line → paragraph break ────────────────────
+        if (line.trim() === '') { out.push(''); i++; continue; }
+
+        // ── Regular text ────────────────────────────────────
+        out.push(inlineFmt(line));
+        i++;
+    }
+
+    // Join with <br>, but collapse multiple blank lines
+    return out.join('<br>').replace(/(<br>){3,}/g, '<br><br>')
+        .replace(/(<\/table>)<br>/g, '$1')
+        .replace(/(<\/ul>)<br>/g, '$1')
+        .replace(/(<\/ol>)<br>/g, '$1')
+        .replace(/(<\/blockquote>)<br>/g, '$1')
+        .replace(/(<\/h[2-4]>)<br>/g, '$1')
+        .replace(/(<hr>)<br>/g, '$1');
 }
 
 // ── Init ──────────────────────────────────────────────────────

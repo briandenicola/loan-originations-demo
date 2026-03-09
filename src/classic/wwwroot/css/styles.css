@@ -250,5 +250,20 @@ footer { text-align: center; padding: 24px; color: var(--text-muted); font-size:
     margin: 8px 0; border-radius: 4px; font-style: italic; color: #333;
 }
 .agent-rationale code { background: #f3f3f3; padding: 1px 5px; border-radius: 3px; font-size: 0.88rem; }
+.agent-rationale ol { padding-left: 20px; margin: 6px 0 10px; }
+.agent-rationale table {
+    width: 100%; border-collapse: collapse; margin: 10px 0 14px; font-size: 0.88rem;
+}
+.agent-rationale th {
+    background: var(--primary-dark, #1a237e); color: #fff; padding: 8px 10px;
+    text-align: left; font-weight: 600; font-size: 0.82rem; text-transform: uppercase;
+    letter-spacing: 0.3px; border-bottom: 2px solid var(--primary, #3949ab);
+}
+.agent-rationale td {
+    padding: 7px 10px; border-bottom: 1px solid var(--border, #e0e0e0);
+    vertical-align: top; color: var(--text, #333);
+}
+.agent-rationale tbody tr:nth-child(even) { background: #f7f9fc; }
+.agent-rationale tbody tr:hover { background: #eef2f9; }
 .agent-rationale::-webkit-scrollbar { width: 6px; }
 .agent-rationale::-webkit-scrollbar-thumb { background: #ccc; border-radius: 3px; }
