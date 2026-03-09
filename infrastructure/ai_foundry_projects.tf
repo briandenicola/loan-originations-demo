@@ -20,22 +20,41 @@ module "project_1" {
       workspace_id = azurerm_log_analytics_workspace.this.id
     }
 
-    models        = [
-    {
-        name     = "gpt-4.1"
-        version  = "2025-04-14"
-        format   = "OpenAI"
-    },
-    {
-        name     = "gpt-5.2-chat"
-        version  = "2026-02-10"
-        format   = "OpenAI"
-    },
-    {
-        name     = "Phi-4-reasoning"
-        version  = "1"
-        format   = "OpenAI"
+    models        = [{
+      name     = "gpt-4.1"
+      version  = "2025-04-14"
+      format   = "OpenAI"
+    }]
+  }
+}
+
+
+module "project_2" {
+  depends_on = [
+    azapi_resource.ai_foundry,
+    module.project_1
+  ]
+  source   = "./project"
+
+  foundry_project = {
+    name          = "${local.project_name}-nextgen"
+    location      = local.location
+    resource_name = local.resource_name
+    tag           = var.tags
+
+    ai_foundry    = {
+      id = azapi_resource.ai_foundry.id
+      name = azapi_resource.ai_foundry.name
     }
-    ]
+
+    logs          = {
+      workspace_id = azurerm_log_analytics_workspace.this.id
+    }
+
+    models        = [{
+      name     = "gpt-5.2-chat"
+      version  = "2026-02-10"
+      format   = "OpenAI"
+    }]
   }
 }

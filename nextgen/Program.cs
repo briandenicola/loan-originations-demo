@@ -1,5 +1,5 @@
 using System.Diagnostics;
-using Azure.AI.Agents.Persistent;
+using Azure.AI.Projects;
 using Azure.Identity;
 using Azure.Monitor.OpenTelemetry.Exporter;
 using LoanOriginationDemo.Agent;
@@ -114,14 +114,16 @@ catch (Exception ex)
     Console.WriteLine($"❌ Entra ID token acquisition FAILED: {ex.Message}");
 }
 
-// Configure Microsoft Agent Framework (PersistentAgentsClient for Foundry Agent Service)
+// Configure Microsoft Agent Framework (AIProjectClient for Foundry Agent Service)
 var foundryEndpoint = builder.Configuration["AzureOpenAI:Endpoint"];
 if (!string.IsNullOrEmpty(foundryEndpoint))
 {
-    var persistentAgentsClient = new PersistentAgentsClient(foundryEndpoint, credential);
-    builder.Services.AddSingleton(persistentAgentsClient);
+    var projectClient = new AIProjectClient(
+        endpoint: new Uri(foundryEndpoint),
+        tokenProvider: credential);
+    builder.Services.AddSingleton(projectClient);
     Console.WriteLine($"✅ Microsoft Agent Framework configured: {foundryEndpoint}");
-    Console.WriteLine($"   Orchestrator agent: {builder.Configuration["Foundry:OrchestratorAgentName"] ?? "loan_orchestrator"}");
+    Console.WriteLine($"   Workflow:  Declarative YAML (LoanOrigination.yaml)");
     Console.WriteLine("   Auth chain: ManagedIdentity → EnvironmentCredential → AzureCliCredential");
 }
 else
