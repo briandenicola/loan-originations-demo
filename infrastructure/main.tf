@@ -7,7 +7,7 @@ locals {
   vnet_name                    = "${local.resource_name}-network"
   loganalytics_name            = "${local.resource_name}-logs"
   nsg_name                     = "${local.resource_name}-nsg"
-  acr_account_name             = "${substr(replace(random_uuid.guid.result, "-", ""), 0, 22)}acr"
+  acr_account_name             = "${replace(local.resource_name, "-", "")}acr"
   foundry_storage_account_name = "${substr(replace(random_uuid.guid.result, "-", ""), 0, 22)}sa"
   vnet_cidr                    = "10.${random_integer.vnet_cidr.result}.0.0/16"
   pe_subnet_cidr               = cidrsubnet(local.vnet_cidr, 4, 1)

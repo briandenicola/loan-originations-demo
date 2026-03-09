@@ -4,8 +4,8 @@ locals {
 
 resource "azurerm_container_app_environment" "this" {
   name                               = local.aca_name
-  resource_group_name                = azurerm_resource_group.this.name
-  location                           = azurerm_resource_group.this.location
+  resource_group_name                = azurerm_resource_group.core.name
+  location                           = azurerm_resource_group.core.location
   infrastructure_resource_group_name = "${local.resource_name}_aca_nodes_rg"
   infrastructure_subnet_id           = azurerm_subnet.nodes.id
   internal_load_balancer_enabled     = true

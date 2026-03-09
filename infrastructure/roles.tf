@@ -11,30 +11,6 @@ resource "azurerm_role_assignment" "ai_foundry_owner_project_manager" {
   principal_id         = data.azurerm_client_config.current.object_id
 }
 
-resource "azurerm_role_assignment" "cognitive_services_owner_contributor" {
-  scope                = azurerm_resource_group.this.id
-  role_definition_name = "Cognitive Services OpenAI Contributor"
-  principal_id         = data.azurerm_client_config.current.object_id
-}
-
-resource "azurerm_role_assignment" "ai_foundry_app_spn_developer" {
-  scope                = azurerm_resource_group.this.id
-  role_definition_name = "Azure AI Developer"
-  principal_id         = var.app_service_principal_object_id
-}
-
-resource "azurerm_role_assignment" "ai_foundry_app_spn_project_manager" {
-  scope                = azurerm_resource_group.this.id
-  role_definition_name = "Azure AI Project Manager"
-  principal_id         = var.app_service_principal_object_id
-}
-
-resource "azurerm_role_assignment" "cognitive_services_openai_app_spn_contributor" {
-  scope                = azurerm_resource_group.this.id
-  role_definition_name = "Cognitive Services OpenAI Contributor"
-  principal_id         = var.app_service_principal_object_id
-}
-
 # resource "azurerm_role_assignment" "cosmosdb_operator_ai_foundry_project" {
 #   depends_on = [
 #     resource.time_sleep.wait_project_identities

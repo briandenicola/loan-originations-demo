@@ -21,12 +21,12 @@ resource "azurerm_resource_group" "logs" {
 }
 
 resource "azurerm_resource_group" "core" {
-  name     = "${local.resource_name}-vnet_rg"
+  name     = "${local.resource_name}-core_rg"
   location = local.location
   tags = {
     Application = var.tags
     DeployedOn  = timestamp()
     AppName     = local.resource_name
-    Tier        = "Azure Virtual Network; Azure Private Endpoints; Azure Network Security Group"
+    Tier        = "Azure Virtual Network; Azure Private Endpoints; Azure Network Security Group; Container Apps Environment; Azure Container Registry"
   }
 }

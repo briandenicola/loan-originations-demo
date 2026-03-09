@@ -7,7 +7,6 @@ vars:
   TITLE: Loan Origination
   DEFAULT_REGION: eastus2
   APP_PORT: 8081
-  SPN_PRINCIPAL_ID: cb809e00-585b-41da-bfab-de61362f6a49
 
 includes:
   workflow: 
@@ -44,7 +43,6 @@ tasks:
       - terraform -chdir=./infrastructure apply -auto-approve -compact-warnings
         -var "region={{.REGION}}"
         -var "tags={{.TITLE}}"
-        -var "app_service_principal_object_id={{.SPN_PRINCIPAL_ID}}"
     vars:
       REGION: "{{default .DEFAULT_REGION .CLI_ARGS}}"
 

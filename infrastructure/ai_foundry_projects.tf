@@ -5,9 +5,6 @@ module "project_classic" {
   ]
   source   = "./project"
 
-  application_owner_object_id = data.azurerm_client_config.current.object_id
-  app_service_principal_object_id = var.app_service_principal_object_id
-
   foundry_project = {
     name          = "${local.project_name}-classic"
     location      = local.location
@@ -39,9 +36,6 @@ module "project_workflow" {
   ]
   source   = "./project"
 
-  application_owner_object_id = data.azurerm_client_config.current.object_id
-  app_service_principal_object_id = var.app_service_principal_object_id
-
   foundry_project = {
     name          = "${local.project_name}-workflow"
     location      = local.location
@@ -58,8 +52,8 @@ module "project_workflow" {
     }
 
     models        = [{
-      name     = "gpt-5.2-chat"
-      version  = "2026-02-10"
+      name     = "gpt-4.1-mini"
+      version  = "2025-04-14"
       format   = "OpenAI"
     }]
   }
