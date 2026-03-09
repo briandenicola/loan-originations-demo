@@ -1,6 +1,9 @@
 # ── Session / Secrets ─────────────────────────────────────────
 session
 session-*
+appsettings.json
+appsettings.*.json
+
 
 # ── .NET ──────────────────────────────────────────────────────
 bin/
@@ -65,3 +68,5 @@ Thumbs.db
 *.swo
 *~
 instructions.docx
+src/classic/appsettings.json
+src/workflow/appsettings.json
