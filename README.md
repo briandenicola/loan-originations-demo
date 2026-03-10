@@ -595,6 +595,91 @@ The application does **not** fall back to local mode. If Foundry Agent Service i
 
 ---
 
+## Built with GitHub Copilot CLI
+
+This entire application — infrastructure, backend, frontend, agents, deployment, and documentation — was built in a single continuous session using **GitHub Copilot CLI** (powered by Claude). No code was written manually. The project evolved through natural language prompts over the course of ~40 conversational turns.
+
+### The Session Timeline
+
+The build progressed through distinct phases, each driven by a conversational prompt:
+
+**Phase 1 — Scaffold the Application**
+> *"I need to create a demo of an agent system based on the information in the instructions.md and instructions.docx file. This demo must showcase Microsoft Foundry and agentic system. Let's build"*
+
+Copilot read the instruction documents and CSV data files, built the full ASP.NET Core Web API with a Semantic Kernel plugin pattern (S01–S10 workflow), CSV-backed data services, REST controllers, and a single-page application frontend with Chart.js visualizations. First end-to-end test passed on the initial run.
+
+**Phase 2 — Infrastructure as Code**
+> *"Can we update the agent to use actual LLM models deployed in Microsoft Foundry? Let's create some Terraform to provision Foundry and deploy the models, agents and workflow"*
+
+Created the complete `infrastructure/` Terraform module: AI Foundry Hub, two project modules (classic + workflow), VNet with subnets, Container App Environment, ACR, Log Analytics, model deployments, and RBAC roles.
+
+**Phase 3 — Security Hardening**
+> *"Need to update the Agent Framework code to use Entra ID instead of account keys. The login chain should be Managed Identities then Azure CLI credentials"*
+
+Replaced API key authentication with `ChainedTokenCredential` (ManagedIdentity → EnvironmentCredential → AzureCliCredential), set `disableLocalAuth = true` in Terraform, and removed all secret outputs.
+
+**Phase 4 — Agent Framework Migration**
+> *"The code is using Semantic Kernel, not Agent Framework"*
+
+Migrated the entire codebase from Semantic Kernel to Microsoft Agent Framework (`Microsoft.Agents.AI.AzureAI.Persistent`), with `PersistentAgentsClient` for agent creation and `AIAgent.RunAsync()` for Foundry thread/run execution.
+
+**Phase 5 — Dual Implementation Architecture**
+Evolved through several iterations:
+- Created a CLI agent initializer to register agents in Foundry
+- Split the project into `src/classic/` (agentic LLM-driven orchestration) and `src/workflow/` (declarative YAML workflow)
+- Migrated workflow from classic `PersistentAgentsClient` to new `AIProjectClient` API with versioned agents
+
+**Phase 6 — Workflow Context Sharing**
+> *"Still having issues with workflow and context — required specialist analysis and data inputs are missing"*
+
+This was the most iterative phase. The declarative YAML workflow couldn't reliably propagate specialist agent outputs via `MessageText()` variables. After multiple debugging rounds, pivoted to a **code-based coordinator** that calls each agent directly, compiles a ~16K character brief from all 5 specialists, and sends it to the underwriting agent. This solved the context sharing problem completely.
+
+**Phase 7 — Observability & UI Polish**
+> *"Let's update the code base to send logs and traces to Application Insights as well as the console"*
+
+Added OpenTelemetry instrumentation with distributed traces, custom metrics, and Application Insights export. Fixed markdown rendering in the UI (tables, ordered lists, headings). Added real-time SSE streaming so workflow steps update live as each agent completes.
+
+**Phase 8 — Red Team & Deployment**
+> *"Create a new folder for Red Team Agents"*
+> *"Let's add some Terraform to deploy this application into ACA"*
+
+Created a Python-based red team agent using the OpenAI Evals API. Built the `app/` Terraform module for Azure Container Apps deployment with convention-based naming. Added ACR build tasks to the Taskfiles.
+
+### Prompts That Shaped Key Decisions
+
+| Prompt | Impact |
+|--------|--------|
+| *"The workflow agent is running but having an interesting error... We're not sending the right data"* | Led to the coordinator pattern redesign — each agent now receives full enriched data |
+| *"Can we create a workflow that has a centralized coordinator that calls the various agents?"* | Triggered the pivot from YAML declarative to code-based coordinator |
+| *"Since the Workflow now is doing all the work, let's update the S01-S09 Queued table entries"* | Drove the real-time SSE streaming implementation |
+| *"I don't like the hard coded values in the apps terraform"* | Led to convention-based naming where `APP_NAME` derives all resource names |
+| *"The code appears to be trying to get a token... but I am running on my laptop"* | Fixed the auth chain ordering to prefer AzureCliCredential for local dev |
+
+### Session Statistics
+
+| Metric | Value |
+|--------|-------|
+| Conversational turns | ~40 |
+| Git commits | 38 |
+| Files created or modified | 80+ |
+| Terraform resources | 25+ (infrastructure) + 7 (app deployment) |
+| AI agents registered | 7 (6 specialists + 1 health check) |
+| SDK migrations | 3 (Semantic Kernel → Agent Framework → AIProjectClient) |
+| Workflow architecture pivots | 2 (YAML declarative → code-based coordinator) |
+| Lines of C# | ~2,500 |
+| Lines of Terraform | ~1,200 |
+| Lines of JavaScript | ~600 |
+
+### How Copilot CLI Helped
+
+- **Rapid prototyping**: Full working app from instruction docs in the first turn
+- **SDK discovery**: Navigated three different Microsoft agent SDKs, discovering correct API surfaces through package inspection when docs were incomplete
+- **Iterative debugging**: When the YAML workflow couldn't share context between agents, Copilot tried multiple fixes (converter functions, TurnToken, fresh conversations) before recommending the architectural pivot to code-based coordination
+- **Cross-cutting changes**: UI updates, Terraform, C# backend, and Taskfile changes were made atomically in single turns
+- **Convention enforcement**: Naming conventions, auth patterns, and infrastructure outputs stayed consistent across 38 commits
+
+---
+
 ## License
 
 This project is licensed under the [MIT License](LICENSE).
