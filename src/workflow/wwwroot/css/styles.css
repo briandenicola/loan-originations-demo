@@ -166,6 +166,7 @@ footer { text-align: center; padding: 24px; color: var(--text-muted); font-size:
 .rec-banner.APPROVE { background: linear-gradient(135deg, #dff6dd, #c3efc1); color: #0b5e0b; border: 2px solid #107c10; }
 .rec-banner.CONDITIONAL { background: linear-gradient(135deg, #fff4ce, #ffe5a0); color: #8a6914; border: 2px solid #ff8c00; }
 .rec-banner.DECLINE { background: linear-gradient(135deg, #fde7e9, #f5c2c5); color: #a4262c; border: 2px solid #d13438; }
+.rec-banner.RECOMPUTED { background: linear-gradient(135deg, #e0e7ff, #c7d2fe); color: #3730a3; border: 2px solid #6366f1; }
 
 /* ── Dashboard Grid ─────────────────────────────────────────── */
 .dashboard-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; }
