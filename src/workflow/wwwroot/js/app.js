@@ -204,103 +204,85 @@ async function runAgent() {
             <span class="ai-banner-icon">🤖</span>
             <div class="ai-banner-text">
                 <strong>AI Agent Workflow running in Microsoft Foundry</strong>
-                <span id="ai-banner-detail">Invoking Foundry agents — all steps executed server-side...</span>
+                <span id="ai-banner-detail">Connecting to Foundry agents...</span>
             </div>
         </div>`);
 
-    // Animate steps sequentially to show the agent is working through them
+    // ── Use Server-Sent Events for real-time step updates ────────
     const aiStartTime = Date.now();
-    let currentStepIdx = 0;
-    const stepTimer = setInterval(() => {
+
+    // Elapsed-time ticker on the banner
+    const bannerTimer = setInterval(() => {
         const elapsed = Math.round((Date.now() - aiStartTime) / 1000);
-
-        // Advance to next step periodically
-        if (currentStepIdx < stepDefs.length) {
-            // Mark previous step as "done" (visually, pending real data)
-            if (currentStepIdx > 0) {
-                const prev = document.getElementById(`step-${stepDefs[currentStepIdx - 1].id}`);
-                prev.classList.remove('running');
-                prev.classList.add('ai-pending');
-                prev.querySelector('.wf-step-icon').textContent = '🤖';
-                prev.querySelector('.wf-step-detail').textContent = 'Agent processing';
-            }
-            // Highlight current step
-            const cur = document.getElementById(`step-${stepDefs[currentStepIdx].id}`);
-            cur.classList.add('running');
-            cur.querySelector('.wf-step-icon').textContent = '⚙️';
-            cur.querySelector('.wf-step-detail').textContent = stepDefs[currentStepIdx].agent
-                ? `Running ${stepDefs[currentStepIdx].agent}...`
-                : 'Processing...';
-            currentStepIdx++;
+        const bannerDetail = document.getElementById('ai-banner-detail');
+        if (bannerDetail && !bannerDetail.dataset.done) {
+            const dots = '.'.repeat((elapsed % 3) + 1);
+            bannerDetail.textContent = `Foundry agents processing${dots} (${elapsed}s)`;
         }
+    }, 1000);
 
-        // Update banner timer
-        const dots = '.'.repeat((elapsed % 3) + 1);
-        document.getElementById('ai-banner-detail').textContent =
-            `Foundry agents processing loan application${dots} (${elapsed}s)`;
-    }, 2500);
-
-    // Call the agent API — all workflow steps happen server-side
     try {
-        const res = await fetch(`${API}/api/v1/agent/run`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ application_no: currentApp.applicationNo }),
-        });
+        agentResult = await new Promise((resolve, reject) => {
+            const url = `${API}/api/v1/agent/run-stream?application_no=${encodeURIComponent(currentApp.applicationNo)}`;
+            const es = new EventSource(url);
 
-        if (!res.ok) {
-            const errBody = await res.json().catch(() => ({ message: res.statusText }));
-            const errMsg = errBody.message || errBody.error || `HTTP ${res.status}`;
-            console.error('Agent API error:', res.status, errBody);
-            clearInterval(stepTimer);
+            es.addEventListener('step', (e) => {
+                const { stepId, status, detail } = JSON.parse(e.data);
+                const el = document.getElementById(`step-${stepId}`);
+                if (!el) return;
 
-            // Mark all steps as failed
-            const banner = document.getElementById('ai-workflow-banner');
-            banner.classList.add('error');
-            banner.querySelector('.ai-banner-icon').textContent = '❌';
-            banner.querySelector('#ai-banner-detail').textContent = 'Workflow failed';
-            stepDefs.forEach(s => {
-                const el = document.getElementById(`step-${s.id}`);
-                el.classList.remove('running', 'ai-pending');
-                el.classList.add('error');
-                el.querySelector('.wf-step-icon').textContent = '❌';
-                el.querySelector('.wf-step-detail').textContent = 'Failed';
+                el.classList.remove('running', 'ai-pending', 'pending');
+
+                if (status === 'RUNNING') {
+                    el.classList.add('running');
+                    el.querySelector('.wf-step-icon').textContent = '⚙️';
+                    el.querySelector('.wf-step-detail').textContent = detail || 'Processing...';
+                } else if (status === 'COMPLETE') {
+                    el.classList.add('complete');
+                    el.querySelector('.wf-step-icon').textContent = '✅';
+                    el.querySelector('.wf-step-detail').textContent = detail || 'Done';
+                } else if (status === 'FAILED') {
+                    el.classList.add('error');
+                    el.querySelector('.wf-step-icon').textContent = '❌';
+                    el.querySelector('.wf-step-detail').textContent = detail || 'Failed';
+                }
             });
 
-            stepsContainer.insertAdjacentHTML('afterend',
-                `<div class="agent-error-banner" style="background:#fee;border:2px solid #c00;border-radius:8px;padding:16px;margin-top:16px;color:#900">
-                    <strong>⚠️ Agent Workflow Error</strong><br>
-                    <span style="font-size:0.95rem">${errMsg}</span><br>
-                    <span style="font-size:0.85rem;color:#666">Status: ${res.status} — Check server logs for details.</span>
-                </div>`);
-            return;
-        }
+            es.addEventListener('complete', (e) => {
+                es.close();
+                resolve(JSON.parse(e.data));
+            });
 
-        agentResult = await res.json();
-        clearInterval(stepTimer);
+            es.addEventListener('error', (e) => {
+                // SSE error event — check if it's a server-sent error or connection failure
+                if (e.data) {
+                    es.close();
+                    reject(new Error(JSON.parse(e.data).message || 'Workflow error'));
+                }
+                // Browser-level connection errors also fire 'error' — EventSource auto-reconnects
+                // but if readyState is CLOSED, it won't reconnect
+                if (es.readyState === EventSource.CLOSED) {
+                    reject(new Error('Connection to Foundry agent lost'));
+                }
+            });
+
+            es.onerror = () => {
+                if (es.readyState === EventSource.CLOSED) {
+                    reject(new Error('Connection to Foundry agent lost'));
+                }
+            };
+        });
+
+        clearInterval(bannerTimer);
         const elapsed = Math.round((Date.now() - aiStartTime) / 1000);
 
         // Update banner to show completion
         const banner = document.getElementById('ai-workflow-banner');
         banner.classList.add('complete');
         banner.querySelector('.ai-banner-icon').textContent = '✅';
-        document.getElementById('ai-banner-detail').textContent =
-            `All agents completed successfully (${elapsed}s)`;
-
-        // Populate steps with real data from the server response
-        if (agentResult.workflowLog && agentResult.workflowLog.steps) {
-            for (let i = 0; i < agentResult.workflowLog.steps.length; i++) {
-                await delay(150);
-                const s = agentResult.workflowLog.steps[i];
-                const el = document.getElementById(`step-${s.stepId}`);
-                if (el) {
-                    el.classList.remove('running', 'ai-pending');
-                    el.classList.add(s.status === 'COMPLETE' ? 'complete' : 'pending');
-                    el.querySelector('.wf-step-icon').textContent = s.status === 'COMPLETE' ? '✅' : '⏳';
-                    el.querySelector('.wf-step-detail').textContent = s.detail || s.status;
-                }
-            }
-        }
+        const bannerDetail = document.getElementById('ai-banner-detail');
+        bannerDetail.dataset.done = '1';
+        bannerDetail.textContent = `All agents completed successfully (${elapsed}s)`;
 
         // Show LLM model info
         const execMode = agentResult.workflowLog?.executionMode || agentResult.workflowLog?.execution_mode || '';
@@ -314,18 +296,21 @@ async function runAgent() {
         renderReviewDashboard();
         showSection('reviewSection');
     } catch (err) {
-        clearInterval(stepTimer);
+        clearInterval(bannerTimer);
         const banner = document.getElementById('ai-workflow-banner');
         if (banner) {
             banner.classList.add('error');
             banner.querySelector('.ai-banner-icon').textContent = '❌';
-            document.getElementById('ai-banner-detail').textContent = 'Network error — could not reach Foundry';
+            const bannerDetail = document.getElementById('ai-banner-detail');
+            bannerDetail.dataset.done = '1';
+            bannerDetail.textContent = 'Workflow failed';
         }
-        console.error('Agent workflow network error:', err);
+        console.error('Agent workflow error:', err);
         stepsContainer.insertAdjacentHTML('afterend',
             `<div class="agent-error-banner" style="background:#fee;border:2px solid #c00;border-radius:8px;padding:16px;margin-top:16px;color:#900">
-                <strong>⚠️ Network Error</strong><br>
-                <span style="font-size:0.95rem">Could not reach the agent service: ${err.message}</span>
+                <strong>⚠️ Agent Workflow Error</strong><br>
+                <span style="font-size:0.95rem">${err.message}</span><br>
+                <span style="font-size:0.85rem;color:#666">Check server logs for details.</span>
             </div>`);
     }
 }

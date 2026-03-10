@@ -214,7 +214,7 @@ public class LoanAgentOrchestrator
         }
     }
 
-    public async Task<AgentRunResponse> RunWorkflowAsync(string applicationNo)
+    public async Task<AgentRunResponse> RunWorkflowAsync(string applicationNo, Action<string, string, string>? onStepUpdate = null)
     {
         using var activity = ActivitySource.StartActivity("RunWorkflow", ActivityKind.Server);
         activity?.SetTag("loan.application_no", applicationNo);
@@ -295,6 +295,9 @@ public class LoanAgentOrchestrator
 
         _logger.LogInformation("Enriched application data: {Size} chars", enrichedData.Length);
 
+        onStepUpdate?.Invoke("S01", "COMPLETE", $"Application {applicationNo} accepted");
+        onStepUpdate?.Invoke("S02", "COMPLETE", "All enrichment data loaded");
+
         activity?.SetTag("loan.execution_mode", "code_coordinator");
         var runId = $"RUN-{Guid.NewGuid().ToString("N")[..8].ToUpper()}";
         activity?.SetTag("loan.run_id", runId);
@@ -371,21 +374,26 @@ public class LoanAgentOrchestrator
 
         foreach (var (stepId, agentName, prompt) in specialists)
         {
+            onStepUpdate?.Invoke(stepId, "RUNNING", $"Calling {agentName}...");
             try
             {
                 var (response, tid, rid, dur) = await CallAgentAsync(agentName, prompt, stepId);
                 specialistResults[stepId] = response;
                 agentTraces.Add(new { step = stepId, agent = agentName, response_length = response.Length, duration_ms = dur, thread_id = tid, run_id = rid });
+                onStepUpdate?.Invoke(stepId, "COMPLETE", $"{agentName} done ({dur}ms, {response.Length} chars)");
             }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "[{RunId}] {Step}: Agent '{Agent}' failed: {Error}", runId, stepId, agentName, ex.Message);
                 specialistResults[stepId] = $"ERROR: {ex.Message}";
                 agentTraces.Add(new { step = stepId, agent = agentName, error = ex.Message });
+                onStepUpdate?.Invoke(stepId, "FAILED", $"{agentName} error: {ex.Message}");
             }
         }
 
         // ── Compile comprehensive brief ─────────────────────────────────
+
+        onStepUpdate?.Invoke("S07", "COMPLETE", $"Verified DTI: {verifiedDti:P1}");
 
         var briefBuilder = new System.Text.StringBuilder();
         briefBuilder.AppendLine("You are the final underwriting recommendation agent. Below is the ORIGINAL APPLICATION DATA followed by COMPLETE ANALYSIS from each specialist agent. Use ALL of this information to produce your final recommendation.");
@@ -432,6 +440,8 @@ public class LoanAgentOrchestrator
 
         // ── S09: Call underwriting recommendation agent ──────────────────
 
+        onStepUpdate?.Invoke("S09", "RUNNING", "Calling underwriting-recommendation-agent...");
+
         string agentRationale;
         string? lastThreadId = null;
         string? lastRunId = null;
@@ -446,6 +456,7 @@ public class LoanAgentOrchestrator
             lastRunId = rid;
             underwritingDurationMs = dur;
             agentTraces.Add(new { step = "S09", agent = "underwriting-recommendation-agent", response_length = response.Length, duration_ms = dur, thread_id = tid, run_id = rid });
+            onStepUpdate?.Invoke("S09", "COMPLETE", $"Recommendation ready ({dur}ms)");
         }
         catch (Exception ex)
         {
@@ -495,6 +506,8 @@ public class LoanAgentOrchestrator
 
         var result = await BuildAndSaveResponse(runId, applicationNo, app, credit, income, fraud,
             quote, rec, verifiedDti, steps, lastThreadId, lastRunId);
+
+        onStepUpdate?.Invoke("S10", "COMPLETE", "Ready for human review");
 
         sw.Stop();
         WorkflowDuration.Record(sw.ElapsedMilliseconds, new KeyValuePair<string, object?>("application_no", applicationNo));

@@ -22,6 +22,60 @@ public class AgentController : ControllerBase
         _logger = logger;
     }
 
+    /// <summary>Run the full S01–S10 agent workflow with real-time SSE step updates.</summary>
+    [HttpGet("run-stream")]
+    public async Task RunWorkflowStream([FromQuery] string application_no)
+    {
+        if (string.IsNullOrEmpty(application_no))
+        {
+            Response.StatusCode = 400;
+            return;
+        }
+
+        Response.ContentType = "text/event-stream";
+        Response.Headers["Cache-Control"] = "no-cache";
+        Response.Headers["Connection"] = "keep-alive";
+
+        var writer = Response.BodyWriter;
+
+        async Task SendEvent(string eventType, string data)
+        {
+            var bytes = System.Text.Encoding.UTF8.GetBytes($"event: {eventType}\ndata: {data}\n\n");
+            await Response.Body.WriteAsync(bytes);
+            await Response.Body.FlushAsync();
+        }
+
+        try
+        {
+            _logger.LogInformation("API: SSE /api/v1/agent/run-stream — application_no={AppNo}", application_no);
+
+            var result = await _agent.RunWorkflowAsync(application_no, (stepId, status, detail) =>
+            {
+                var json = System.Text.Json.JsonSerializer.Serialize(new { stepId, status, detail });
+                SendEvent("step", json).GetAwaiter().GetResult();
+            });
+
+            var resultJson = System.Text.Json.JsonSerializer.Serialize(result,
+                new System.Text.Json.JsonSerializerOptions { PropertyNamingPolicy = System.Text.Json.JsonNamingPolicy.CamelCase });
+            await SendEvent("complete", resultJson);
+
+            _logger.LogInformation("API: SSE completed for {AppNo}, runId={RunId}", application_no, result.RunId);
+        }
+        catch (ArgumentException ex)
+        {
+            await SendEvent("error", System.Text.Json.JsonSerializer.Serialize(new { error_code = "NOT_FOUND", message = ex.Message }));
+        }
+        catch (InvalidOperationException ex)
+        {
+            await SendEvent("error", System.Text.Json.JsonSerializer.Serialize(new { error_code = "AGENT_UNAVAILABLE", message = ex.Message }));
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "API: SSE error for {AppNo}: {Message}", application_no, ex.Message);
+            await SendEvent("error", System.Text.Json.JsonSerializer.Serialize(new { error_code = "INTERNAL_ERROR", message = "Unexpected error during workflow." }));
+        }
+    }
+
     /// <summary>Run the full S01–S10 agent workflow.</summary>
     [HttpPost("run")]
     public async Task<IActionResult> RunWorkflow([FromBody] Dictionary<string, string> body)
