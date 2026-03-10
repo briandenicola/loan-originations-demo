@@ -1,32 +1,56 @@
-variable locations {
-  description = "The location for this application deployment"
-  type        = list(string)
-  default     = ["eastus2","westus3"]
-}
-
-variable "app_name" {
-  description = "The root name for this application deployment"
+variable "region" {
+  description = "Region to deploy resources to (must match infrastructure)"
+  default     = "eastus2"
 }
 
 variable "tags" {
-  description = "The tags for this application deployment"
+  description = "Application tag for resource groups"
   type        = string
 }
 
-variable commit_version {
-  description = "The commit version for this application deployment"
+variable "commit_version" {
+  description = "Container image tag (short git SHA)"
+  type        = string
 }
 
-variable custom_domain {
-  description = "The custom domain for this application deployment"
+variable "acr_login_server" {
+  description = "ACR login server (e.g. myacr.azurecr.io)"
+  type        = string
 }
 
-variable "use_cache" {
-  description = "Whether to use Redis cache"
-  default     = true
+variable "cae_id" {
+  description = "Container App Environment resource ID"
+  type        = string
 }
 
-variable "use_jumpbox" {
-  description = "Whether to deploy a jumpbox VM in each location"
-  default     = true
+variable "foundry_endpoint_classic" {
+  description = "Foundry project endpoint for the classic agent"
+  type        = string
+}
+
+variable "foundry_endpoint_workflow" {
+  description = "Foundry project endpoint for the workflow agent"
+  type        = string
+}
+
+variable "appinsights_cs_classic" {
+  description = "Application Insights connection string for classic"
+  type        = string
+  sensitive   = true
+}
+
+variable "appinsights_cs_workflow" {
+  description = "Application Insights connection string for workflow"
+  type        = string
+  sensitive   = true
+}
+
+variable "ai_services_id" {
+  description = "Resource ID of the AI Services (Foundry) account for RBAC"
+  type        = string
+}
+
+variable "cae_rg" {
+  description = "Resource group name containing the CAE and ACR"
+  type        = string
 }

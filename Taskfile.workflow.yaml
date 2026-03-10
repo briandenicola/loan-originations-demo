@@ -45,6 +45,16 @@ tasks:
       COMMIT_VERSION:
         sh: git rev-parse HEAD | cut -c 1-8
 
+  acr-build:
+    desc: Builds container in ACR for {{.TITLE}} workflow agent
+    cmds:
+      - az acr build -r {{.ACR_NAME}} -t loan-origination-workflow:{{.COMMIT_VERSION}} -t loan-origination-workflow:latest -f src/workflow/Dockerfile .
+    vars:
+      COMMIT_VERSION:
+        sh: git rev-parse HEAD | cut -c 1-8
+      ACR_NAME:
+        sh: terraform -chdir=./infrastructure output -raw ACR_NAME
+
   docker-run:
     desc: Runs the Docker container locally
     cmds:

@@ -19,6 +19,10 @@ includes:
   redteam:
     taskfile: ./Taskfile.redteam.yaml
     internal: false
+
+  app:
+    taskfile: ./Taskfile.app.yaml
+    internal: false
   
 tasks:
   default:

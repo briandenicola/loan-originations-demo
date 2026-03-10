@@ -1,11 +1,9 @@
-resource "azurerm_resource_group" "regional_apps" {
-  name     = local.apps_rg_name
-  location = var.location
+resource "azurerm_resource_group" "apps" {
+  name     = local.rg_name
+  location = var.region
   tags = {
     Application = var.tags
-    AppName     = var.app_name
-    Components  = "Container Apps, KeyVault, Managed Identity "
-    Methodology = "CQR Patterns, Event-Driven Architecture, Microservices"
+    Components  = "Container Apps, Managed Identity"
     DeployedOn  = timestamp()
   }
 }
