@@ -10,8 +10,7 @@ Stage directions are in *[brackets]*. Approximate timestamps are noted for pacin
 **Pre-staging notes:** Before the demo begins, the SE should have the following ready in separate browser tabs:
 - Tab 1: The loan origination application (intake screen loaded)
 - Tab 2: Application Insights — live metrics or a recent trace from a prior workflow run
-- Tab 3: A raw API response (e.g., `GET /api/v1/credit-profile?application_no=APP-2026-001`)
-- Tab 4: The README "Built with Copilot CLI" section or a slide with build stats
+- Tab 3: The README "Built with Copilot CLI" section or a slide with build stats
 
 ---
 
@@ -169,12 +168,6 @@ Every piece of data in this system is exposed through REST APIs. The same APIs t
 
 And the workflow itself produces four JSON audit files on every single run — the prepared application, the step-by-step run log, the recommendation with reasoning, and the human decision record. That's data lineage, process audit, explainability audit, and decision audit — out of the box, on every loan.
 
-*[SE switches to Tab 3 — raw API response]*
-
-**SE:**
-
-Here's what that looks like. This is a direct API call — credit profile for this application. Bureau score 720, score band Good, zero delinquencies, twenty-eight percent utilization. This is the same data the credit-profile-agent analyzed. Any BI tool that can call a REST endpoint can build dashboards on this.
-
 *[SE switches to Tab 2 — Application Insights]*
 
 And here's Application Insights. You're looking at the traces from the workflow we just ran. Every agent call — credit, income, fraud, policy, pricing, underwriting — shows up as a span in the distributed trace. You can see the duration of each call, the dependencies, any errors. This is OpenTelemetry flowing from the orchestrator through each Foundry agent invocation.
@@ -269,8 +262,7 @@ Thank you. We'd love to take your questions.
 |-----|---------|---------|
 | 1 | Loan origination app (intake screen) | Stages 2–4 |
 | 2 | Application Insights (trace from prior run or live metrics) | Stage 5 |
-| 3 | Raw API response (`/api/v1/credit-profile?application_no=...`) | Stage 5 |
-| 4 | README "Built with Copilot CLI" section or stats slide | Stage 4 |
+| 3 | README "Built with Copilot CLI" section or stats slide | Stage 4 |
 
 ### If the Workflow Takes Longer Than Expected
 
