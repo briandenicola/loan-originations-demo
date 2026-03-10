@@ -11,6 +11,8 @@ A reference architecture showcasing Microsoft's Agent Framework and Azure AI Fou
 
 Both implementations share the same frontend, data layer, and six specialist AI agents. They differ in **how** the agents are orchestrated.
 
+![Architecture Diagram](.assets/architecture.png)
+
 ---
 
 ## Architecture
