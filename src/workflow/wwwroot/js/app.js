@@ -325,14 +325,16 @@ function renderReviewDashboard() {
     const status = rec.recommendationStatus || rec.recommendation_status;
     banner.className = `rec-banner ${status}`;
     const conf = rec.confidenceScore || rec.confidence_score;
+    const confDisplay = (conf === undefined || conf === null || conf < 0)
+        ? '<div style="font-size:1.2rem">🤖</div><div style="font-weight:400;font-size:0.85rem">AI Evaluated</div>'
+        : `<div style="font-size:2rem">${Math.round(conf * 100)}%</div><div style="font-weight:400;font-size:0.85rem">Confidence</div>`;
     banner.innerHTML = `
         <div>
             <div style="font-size:1.4rem">AI Recommendation: ${status}</div>
             <div style="font-weight:400;font-size:0.9rem;margin-top:4px;max-height:80px;overflow:hidden;text-overflow:ellipsis">${(rec.rationaleSummary || rec.rationale_summary || '').split('\n').filter(l => l.trim()).slice(0, 2).join(' ').replace(/\*\*/g, '').replace(/^#+\s*/g, '').substring(0, 200)}...</div>
         </div>
         <div style="text-align:right">
-            <div style="font-size:2rem">${Math.round(conf * 100)}%</div>
-            <div style="font-weight:400;font-size:0.85rem">Confidence</div>
+            ${confDisplay}
         </div>`;
 
     // Credit gauge
@@ -355,11 +357,12 @@ function renderReviewDashboard() {
     if (income) {
         drawDtiChart(dti, p.totalMonthlyDebtPayments || p.total_monthly_debt_payments,
             income.verifiedMonthlyIncome || income.verified_monthly_income);
+        const verifiedIncome = income.verifiedMonthlyIncome || income.verified_monthly_income;
         document.getElementById('incomeData').innerHTML = dataGrid({
-            'Verified Income': `$${(income.verifiedMonthlyIncome || income.verified_monthly_income).toLocaleString()}/mo`,
+            'Verified Income': verifiedIncome != null ? `$${verifiedIncome.toLocaleString()}/mo` : 'N/A',
             'Status': income.verificationStatus || income.verification_status,
-            'Employer Match': `${Math.round((income.employerMatchPct || income.employer_match_pct) * 100)}%`,
-            'Verified DTI': `${(dti * 100).toFixed(1)}%`,
+            'Employer Match': `${Math.round((income.employerMatchPct || income.employer_match_pct || 0) * 100)}%`,
+            'Verified DTI': `${((dti || 0) * 100).toFixed(1)}%`,
         });
     }
 
@@ -412,12 +415,15 @@ function renderReviewDashboard() {
     // Quote
     const q = rec.quote;
     if (q) {
+        const monthlyPayment = q.estimatedMonthlyPayment || q.estimated_monthly_payment;
+        const totalRepayable = q.totalRepayableAmount || q.total_repayable_amount;
+        const pti = q.paymentToIncomePct || q.payment_to_income_pct;
         document.getElementById('quoteData').innerHTML = dataGrid({
-            'Risk Tier': q.riskTier || q.risk_tier,
+            'Risk Tier': q.riskTier || q.risk_tier || 'N/A',
             'APR': `${q.aprPct || q.apr_pct}%`,
-            'Monthly Payment': `$${(q.estimatedMonthlyPayment || q.estimated_monthly_payment).toLocaleString()}`,
-            'Total Repayable': `$${(q.totalRepayableAmount || q.total_repayable_amount).toLocaleString()}`,
-            'Payment/Income': `${((q.paymentToIncomePct || q.payment_to_income_pct) * 100).toFixed(1)}%`,
+            'Monthly Payment': monthlyPayment != null ? `$${monthlyPayment.toLocaleString()}` : 'N/A',
+            'Total Repayable': totalRepayable != null ? `$${totalRepayable.toLocaleString()}` : 'N/A',
+            'Payment/Income': pti != null ? `${(pti * 100).toFixed(1)}%` : 'N/A',
         });
     }
 
