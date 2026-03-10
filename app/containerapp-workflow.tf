@@ -1,7 +1,7 @@
 # ── Workflow Agent Container App ──────────────────────────────
 resource "azurerm_container_app" "workflow" {
   name                         = local.workflow_app_name
-  container_app_environment_id = var.cae_id
+  container_app_environment_id = data.azurerm_container_app_environment.this.id
   resource_group_name          = azurerm_resource_group.apps.name
   revision_mode                = "Single"
 
@@ -25,7 +25,7 @@ resource "azurerm_container_app" "workflow" {
   }
 
   registry {
-    server   = var.acr_login_server
+    server   = local.acr_login_server
     identity = azurerm_user_assigned_identity.app.id
   }
 
@@ -38,12 +38,12 @@ resource "azurerm_container_app" "workflow" {
 
       env {
         name  = "AzureOpenAI__Endpoint"
-        value = var.foundry_endpoint_workflow
+        value = local.foundry_endpoint_workflow
       }
 
       env {
         name  = "APPLICATIONINSIGHTS_CONNECTION_STRING"
-        value = var.appinsights_cs_workflow
+        value = data.azurerm_application_insights.workflow.connection_string
       }
 
       env {

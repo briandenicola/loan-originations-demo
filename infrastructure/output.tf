@@ -22,38 +22,8 @@ output "FOUNDRY_NEXTGEN_ENDPOINT" {
     sensitive = false
 }
 
-# ── Outputs for app/ deployment module ────────────────────────
+# ACR_NAME is still needed by the acr-build Taskfile tasks
 output "ACR_NAME" {
     value     = azurerm_container_registry.this.name
-    sensitive = false
-}
-
-output "ACR_LOGIN_SERVER" {
-    value     = azurerm_container_registry.this.login_server
-    sensitive = false
-}
-
-output "CAE_ID" {
-    value     = azurerm_container_app_environment.this.id
-    sensitive = false
-}
-
-output "CAE_RG" {
-    value     = azurerm_resource_group.core.name
-    sensitive = false
-}
-
-output "CLASSIC_APPINSIGHTS_CONNECTION_STRING" {
-    value     = module.project_classic.APPINSIGHTS_CONNECTION_STRING
-    sensitive = true
-}
-
-output "WORKFLOW_APPINSIGHTS_CONNECTION_STRING" {
-    value     = module.project_workflow.APPINSIGHTS_CONNECTION_STRING
-    sensitive = true
-}
-
-output "AI_SERVICES_ID" {
-    value     = azapi_resource.ai_foundry.id
     sensitive = false
 }

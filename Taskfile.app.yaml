@@ -26,53 +26,27 @@ tasks:
     desc: Applies app Terraform to deploy Container Apps
     cmds:
       - terraform -chdir=./app apply -auto-approve -compact-warnings
+        -var "app_name={{.APP_NAME}}"
         -var "region={{.REGION}}"
         -var "tags={{.TAGS}}"
         -var "commit_version={{.COMMIT_VERSION}}"
-        -var "acr_login_server={{.ACR_LOGIN_SERVER}}"
-        -var "cae_id={{.CAE_ID}}"
-        -var "cae_rg={{.CAE_RG}}"
-        -var "foundry_endpoint_classic={{.FOUNDRY_ENDPOINT}}"
-        -var "foundry_endpoint_workflow={{.FOUNDRY_NEXTGEN_ENDPOINT}}"
-        -var "appinsights_cs_classic={{.APPINSIGHTS_CS_CLASSIC}}"
-        -var "appinsights_cs_workflow={{.APPINSIGHTS_CS_WORKFLOW}}"
-        -var "ai_services_id={{.AI_SERVICES_ID}}"
     vars:
       REGION: '{{default "eastus2" .CLI_ARGS}}'
       TAGS: "Loan Origination"
       COMMIT_VERSION:
         sh: git rev-parse HEAD | cut -c 1-8
-      ACR_LOGIN_SERVER:
-        sh: terraform -chdir=./infrastructure output -raw ACR_LOGIN_SERVER
-      CAE_ID:
-        sh: terraform -chdir=./infrastructure output -raw CAE_ID
-      CAE_RG:
-        sh: terraform -chdir=./infrastructure output -raw CAE_RG
-      FOUNDRY_ENDPOINT:
-        sh: terraform -chdir=./infrastructure output -raw FOUNDRY_ENDPOINT
-      FOUNDRY_NEXTGEN_ENDPOINT:
-        sh: terraform -chdir=./infrastructure output -raw FOUNDRY_NEXTGEN_ENDPOINT
-      APPINSIGHTS_CS_CLASSIC:
-        sh: terraform -chdir=./infrastructure output -raw CLASSIC_APPINSIGHTS_CONNECTION_STRING
-      APPINSIGHTS_CS_WORKFLOW:
-        sh: terraform -chdir=./infrastructure output -raw WORKFLOW_APPINSIGHTS_CONNECTION_STRING
-      AI_SERVICES_ID:
-        sh: terraform -chdir=./infrastructure output -raw AI_SERVICES_ID
+      APP_NAME:
+        sh: terraform -chdir=./infrastructure output -raw APP_NAME
 
   destroy:
     desc: Destroys the app deployment
     cmds:
       - terraform -chdir=./app destroy -auto-approve
+        -var "app_name={{.APP_NAME}}"
         -var "region={{.REGION}}"
         -var "tags=Loan Origination"
         -var "commit_version=destroy"
-        -var "acr_login_server=placeholder"
-        -var "cae_id=placeholder"
-        -var "cae_rg=placeholder"
-        -var "foundry_endpoint_classic=placeholder"
-        -var "foundry_endpoint_workflow=placeholder"
-        -var "appinsights_cs_classic=placeholder"
-        -var "appinsights_cs_workflow=placeholder"
-        -var "ai_services_id=placeholder"
     vars:
       REGION: '{{default "eastus2" .CLI_ARGS}}'
+      APP_NAME:
+        sh: terraform -chdir=./infrastructure output -raw APP_NAME

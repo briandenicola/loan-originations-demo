@@ -1,5 +1,5 @@
 resource "azurerm_resource_group" "apps" {
-  name     = local.rg_name
+  name     = local.apps_rg_name
   location = var.region
   tags = {
     Application = var.tags
