@@ -527,7 +527,7 @@ function destroyChart(id) {
 async function recompute() {
     const btn = document.querySelector('[onclick="recompute()"]');
     const origText = btn.textContent;
-    btn.textContent = '⏳ Recomputing...';
+    btn.textContent = '🤖 Re-evaluating with AI agents...';
     btn.disabled = true;
 
     try {
@@ -564,23 +564,23 @@ async function recompute() {
             agentResult.recommendation.quote = result.quote;
         }
         if (result.recommendation) {
-            agentResult.recommendation.recommendation_status = result.recommendation.recommendationStatus || result.recommendation.recommendation_status;
-            agentResult.recommendation.confidence_score = result.recommendation.confidenceScore || result.recommendation.confidence_score;
-            agentResult.recommendation.rationale_summary = result.recommendation.rationaleSummary || result.recommendation.rationale_summary;
-            agentResult.recommendation.key_factors = result.recommendation.keyFactors || result.recommendation.key_factors;
-            agentResult.recommendation.conditions = result.recommendation.conditions || result.recommendation.conditions;
-            agentResult.recommendation.policy_hits = result.recommendation.policyHits || result.recommendation.policy_hits;
+            agentResult.recommendation.recommendation_status = result.recommendation.recommendation_status || result.recommendation.recommendationStatus;
+            agentResult.recommendation.confidence_score = result.recommendation.confidence_score || result.recommendation.confidenceScore;
+            agentResult.recommendation.rationale_summary = result.recommendation.rationale_summary || result.recommendation.rationaleSummary;
+            agentResult.recommendation.key_factors = result.recommendation.key_factors || result.recommendation.keyFactors || [];
+            agentResult.recommendation.conditions = result.recommendation.conditions || [];
+            agentResult.recommendation.policy_hits = result.recommendation.policy_hits || result.recommendation.policyHits || [];
         }
 
         renderReviewDashboard();
-        btn.textContent = '✅ Updated!';
-        setTimeout(() => { btn.textContent = origText; }, 2000);
+        btn.textContent = '✅ AI Re-evaluation Complete!';
+        setTimeout(() => { btn.textContent = origText; }, 3000);
     } catch (err) {
         console.error('Recompute error:', err);
         alert(`Recompute error: ${err.message}`);
     } finally {
         btn.disabled = false;
-        if (btn.textContent === '⏳ Recomputing...') btn.textContent = origText;
+        if (btn.textContent === '🤖 Re-evaluating with AI agents...') btn.textContent = origText;
     }
 }
 

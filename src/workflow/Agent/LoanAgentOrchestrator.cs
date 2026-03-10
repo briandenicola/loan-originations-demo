@@ -601,6 +601,149 @@ public class LoanAgentOrchestrator
         };
     }
 
+    /// <summary>
+    /// Recomputes the underwriting recommendation with adjusted loan terms by calling
+    /// the pricing and underwriting AI agents with the new amounts.
+    /// </summary>
+    public async Task<object> RecomputeWithAgentAsync(
+        string applicationNo, double requestedAmount, int requestedTermMonths, string loanType, string originalRunId)
+    {
+        using var activity = ActivitySource.StartActivity("RecomputeWithAgent", ActivityKind.Server);
+        activity?.SetTag("loan.application_no", applicationNo);
+        activity?.SetTag("loan.requested_amount", requestedAmount);
+        activity?.SetTag("loan.requested_term_months", requestedTermMonths);
+        var sw = System.Diagnostics.Stopwatch.StartNew();
+
+        var app = _plugins.GetApplication(applicationNo)
+            ?? throw new ArgumentException($"Application {applicationNo} not found");
+
+        if (_projectClient == null)
+            throw new InvalidOperationException("Azure AI Foundry is not configured.");
+
+        // Re-enrich with adjusted terms
+        var credit = _plugins.GetCreditProfile(applicationNo);
+        var income = _plugins.GetIncomeVerification(applicationNo);
+        var fraud = _plugins.GetFraudSignals(applicationNo);
+        var thresholds = _plugins.GetPolicyThresholds();
+        var quote = _plugins.ComputeQuote(applicationNo, requestedAmount, requestedTermMonths, loanType);
+        double verifiedDti = income?.VerifiedMonthlyIncome > 0
+            ? Math.Round(app.TotalMonthlyDebtPayments / income.VerifiedMonthlyIncome, 4) : 999;
+
+        var enrichedData = JsonSerializer.Serialize(new
+        {
+            application = new
+            {
+                application_no = applicationNo,
+                applicant_name = app.ApplicantName,
+                loan_amount = requestedAmount,
+                loan_purpose = app.LoanPurpose,
+                term_months = requestedTermMonths,
+                loan_type = loanType,
+                gross_annual_income = app.GrossAnnualIncome,
+                monthly_debt = app.TotalMonthlyDebtPayments,
+                declared_dti = app.DeclaredDtiPct,
+            },
+            credit_profile = credit,
+            income_verification = income,
+            fraud_signals = fraud,
+            policy_thresholds = thresholds,
+            pricing_quote = new
+            {
+                apr_pct = quote.AprPct,
+                monthly_payment = quote.EstimatedMonthlyPayment,
+                payment_to_income_pct = quote.PaymentToIncomePct,
+            },
+            verified_dti_pct = verifiedDti,
+            recompute_context = new
+            {
+                original_run_id = originalRunId,
+                original_amount = app.LoanAmountRequested,
+                adjusted_amount = requestedAmount,
+                original_term = app.RequestedTermMonths,
+                adjusted_term = requestedTermMonths,
+            },
+        }, new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower, WriteIndented = false });
+
+        // Resolve agents
+        var agentMap = new Dictionary<string, string>();
+        await foreach (var a in _projectClient.Agents.GetAgentsAsync())
+            agentMap[a.Name] = a.Id;
+
+        // Call pricing agent with adjusted terms
+        string pricingAnalysis = "";
+        if (agentMap.TryGetValue("pricing-agent", out var pricingId))
+        {
+            _logger.LogInformation("[RECOMPUTE] Calling pricing-agent with adjusted terms: ${Amount}, {Term}mo", requestedAmount, requestedTermMonths);
+            var pricingAgent = await _projectClient.GetAIAgentAsync(pricingId);
+            var pricingResponse = await pricingAgent.RunAsync(
+                $"Review the pricing for this ADJUSTED loan application. The borrower is requesting a change from the original terms. Validate the risk tier, APR, and monthly payment for the new terms.\n\nADJUSTED APPLICATION DATA:\n{enrichedData}");
+            pricingAnalysis = pricingResponse.Text ?? "";
+            _logger.LogInformation("[RECOMPUTE] pricing-agent responded: {Chars} chars", pricingAnalysis.Length);
+        }
+
+        // Build brief for underwriting agent
+        var brief = new System.Text.StringBuilder();
+        brief.AppendLine("You are the underwriting recommendation agent. A loan officer has ADJUSTED the loan terms and is requesting a re-evaluation.");
+        brief.AppendLine($"ORIGINAL loan amount: ${app.LoanAmountRequested:N0}, term: {app.RequestedTermMonths} months");
+        brief.AppendLine($"ADJUSTED loan amount: ${requestedAmount:N0}, term: {requestedTermMonths} months");
+        brief.AppendLine();
+        brief.AppendLine("APPLICATION DATA (with adjusted terms):");
+        brief.AppendLine(enrichedData);
+        brief.AppendLine();
+        if (!string.IsNullOrEmpty(pricingAnalysis))
+        {
+            brief.AppendLine("PRICING ANALYSIS (for adjusted terms):");
+            brief.AppendLine(pricingAnalysis);
+            brief.AppendLine();
+        }
+        brief.AppendLine("Produce your FINAL UNDERWRITING RECOMMENDATION for the ADJUSTED terms. Include:");
+        brief.AppendLine("1. Recommendation status: APPROVE, CONDITIONAL, or DECLINE");
+        brief.AppendLine("2. Confidence score (0.0 to 1.0)");
+        brief.AppendLine("3. How the term/amount change affects risk assessment");
+        brief.AppendLine("4. Key factors and conditions");
+        brief.AppendLine("5. Professional rationale for the human reviewer");
+
+        // Call underwriting agent
+        if (!agentMap.TryGetValue("underwriting-recommendation-agent", out var uwId))
+            throw new InvalidOperationException("underwriting-recommendation-agent not found in Foundry.");
+
+        _logger.LogInformation("[RECOMPUTE] Calling underwriting-recommendation-agent...");
+        var uwAgent = await _projectClient.GetAIAgentAsync(uwId);
+        var uwResponse = await uwAgent.RunAsync(brief.ToString());
+        var rationale = uwResponse.Text ?? "(empty response)";
+
+        sw.Stop();
+        _logger.LogInformation("[RECOMPUTE] Complete for {AppNo}: {Chars} chars in {Duration}ms",
+            applicationNo, rationale.Length, sw.ElapsedMilliseconds);
+
+        activity?.SetTag("loan.recompute.duration_ms", sw.ElapsedMilliseconds);
+        activity?.SetStatus(ActivityStatusCode.Ok);
+
+        return new
+        {
+            quote = new
+            {
+                apr_pct = quote.AprPct,
+                estimated_monthly_payment = quote.EstimatedMonthlyPayment,
+                payment_to_income_pct = quote.PaymentToIncomePct,
+                loan_amount = requestedAmount,
+                term_months = requestedTermMonths,
+            },
+            recommendation = new
+            {
+                recommendation_status = "AI_RECOMPUTED",
+                confidence_score = 0.0,
+                rationale_summary = rationale,
+                key_factors = new List<string>(),
+                conditions = new List<string>(),
+                policy_hits = new List<string>(),
+                agent_enhanced = true,
+                recomputed_at = DateTime.UtcNow.ToString("o"),
+            },
+            verified_dti_pct = verifiedDti,
+        };
+    }
+
     public async Task<Dictionary<string, object>> RecordDecisionAsync(DecisionRequest req)
     {
         using var activity = ActivitySource.StartActivity("RecordDecision");

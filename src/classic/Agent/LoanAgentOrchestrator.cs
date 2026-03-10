@@ -601,6 +601,116 @@ public class LoanAgentOrchestrator
         };
     }
 
+    /// <summary>
+    /// Recomputes the underwriting recommendation with adjusted loan terms by calling
+    /// the AI orchestrator agent with the new amounts.
+    /// </summary>
+    public async Task<object> RecomputeWithAgentAsync(
+        string applicationNo, double requestedAmount, int requestedTermMonths, string loanType, string originalRunId)
+    {
+        using var activity = ActivitySource.StartActivity("RecomputeWithAgent", ActivityKind.Server);
+        activity?.SetTag("loan.application_no", applicationNo);
+        activity?.SetTag("loan.requested_amount", requestedAmount);
+        activity?.SetTag("loan.requested_term_months", requestedTermMonths);
+        var sw = System.Diagnostics.Stopwatch.StartNew();
+
+        var app = _plugins.GetApplication(applicationNo)
+            ?? throw new ArgumentException($"Application {applicationNo} not found");
+
+        if (_agentsClient == null)
+            throw new InvalidOperationException("Foundry Agent Service is not configured.");
+
+        // Re-enrich with adjusted terms
+        var credit = _plugins.GetCreditProfile(applicationNo);
+        var income = _plugins.GetIncomeVerification(applicationNo);
+        var fraud = _plugins.GetFraudSignals(applicationNo);
+        var thresholds = _plugins.GetPolicyThresholds();
+        var quote = _plugins.ComputeQuote(applicationNo, requestedAmount, requestedTermMonths, loanType);
+        double verifiedDti = income?.VerifiedMonthlyIncome > 0
+            ? Math.Round(app.TotalMonthlyDebtPayments / income.VerifiedMonthlyIncome, 4) : 999;
+
+        var enrichedData = JsonSerializer.Serialize(new
+        {
+            application = new
+            {
+                application_no = applicationNo,
+                applicant_name = app.ApplicantName,
+                loan_amount = requestedAmount,
+                loan_purpose = app.LoanPurpose,
+                term_months = requestedTermMonths,
+                loan_type = loanType,
+                gross_annual_income = app.GrossAnnualIncome,
+                monthly_debt = app.TotalMonthlyDebtPayments,
+                declared_dti = app.DeclaredDtiPct,
+            },
+            credit_profile = credit,
+            income_verification = income,
+            fraud_signals = fraud,
+            policy_thresholds = thresholds,
+            pricing_quote = new
+            {
+                apr_pct = quote.AprPct,
+                monthly_payment = quote.EstimatedMonthlyPayment,
+                payment_to_income_pct = quote.PaymentToIncomePct,
+            },
+            verified_dti_pct = verifiedDti,
+            recompute_context = new
+            {
+                original_run_id = originalRunId,
+                original_amount = app.LoanAmountRequested,
+                adjusted_amount = requestedAmount,
+                original_term = app.RequestedTermMonths,
+                adjusted_term = requestedTermMonths,
+            },
+        }, new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower, WriteIndented = false });
+
+        // Resolve orchestrator and call with adjusted data
+        var orchestratorId = await ResolveOrchestratorAgentIdAsync()
+            ?? throw new InvalidOperationException("Orchestrator agent not found in Foundry.");
+
+        var prompt = $"A loan officer has ADJUSTED the loan terms and is requesting a re-evaluation.\n" +
+            $"ORIGINAL loan amount: ${app.LoanAmountRequested:N0}, term: {app.RequestedTermMonths} months\n" +
+            $"ADJUSTED loan amount: ${requestedAmount:N0}, term: {requestedTermMonths} months\n\n" +
+            $"Re-evaluate this application with the adjusted terms. Produce a complete underwriting recommendation.\n\n" +
+            $"APPLICATION DATA (with adjusted terms):\n{enrichedData}";
+
+        _logger.LogInformation("[RECOMPUTE] Calling orchestrator agent with adjusted terms: ${Amount}, {Term}mo", requestedAmount, requestedTermMonths);
+        var orchestratorAgent = await _agentsClient.GetAIAgentAsync(orchestratorId);
+        var agentResponse = await orchestratorAgent.RunAsync(prompt);
+        var rationale = agentResponse.Text ?? "(empty response)";
+
+        sw.Stop();
+        _logger.LogInformation("[RECOMPUTE] Complete for {AppNo}: {Chars} chars in {Duration}ms",
+            applicationNo, rationale.Length, sw.ElapsedMilliseconds);
+
+        activity?.SetTag("loan.recompute.duration_ms", sw.ElapsedMilliseconds);
+        activity?.SetStatus(ActivityStatusCode.Ok);
+
+        return new
+        {
+            quote = new
+            {
+                apr_pct = quote.AprPct,
+                estimated_monthly_payment = quote.EstimatedMonthlyPayment,
+                payment_to_income_pct = quote.PaymentToIncomePct,
+                loan_amount = requestedAmount,
+                term_months = requestedTermMonths,
+            },
+            recommendation = new
+            {
+                recommendation_status = "AI_RECOMPUTED",
+                confidence_score = 0.0,
+                rationale_summary = rationale,
+                key_factors = new List<string>(),
+                conditions = new List<string>(),
+                policy_hits = new List<string>(),
+                agent_enhanced = true,
+                recomputed_at = DateTime.UtcNow.ToString("o"),
+            },
+            verified_dti_pct = verifiedDti,
+        };
+    }
+
     public async Task<Dictionary<string, object>> RecordDecisionAsync(DecisionRequest req)
     {
         using var activity = ActivitySource.StartActivity("RecordDecision");

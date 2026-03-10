@@ -65,9 +65,9 @@ public class AgentController : ControllerBase
         return Ok(record);
     }
 
-    /// <summary>Recompute recommendation with adjusted terms.</summary>
+    /// <summary>Recompute recommendation with adjusted terms via AI agents.</summary>
     [HttpPost("recompute")]
-    public IActionResult Recompute([FromBody] Dictionary<string, System.Text.Json.JsonElement> body)
+    public async Task<IActionResult> Recompute([FromBody] Dictionary<string, System.Text.Json.JsonElement> body)
     {
         var appNo = body.GetValueOrDefault("application_no").ToString();
         _logger.LogInformation("API: POST /api/v1/agent/recompute — application_no={AppNo}", appNo);
@@ -77,31 +77,26 @@ public class AgentController : ControllerBase
         var loanType = body.ContainsKey("loan_type") ? body["loan_type"].GetString() ?? "" : "";
         var runId = body.ContainsKey("run_id") ? body["run_id"].GetString() ?? "RECOMPUTE" : "RECOMPUTE";
 
-        var app = _plugins.GetApplication(appNo);
-        if (app == null)
+        try
         {
-            _logger.LogWarning("API: Recompute — invalid application_no: {AppNo}", appNo);
-            return BadRequest(new { error_code = "BAD_REQUEST", message = "Invalid application_no" });
+            var result = await _agent.RecomputeWithAgentAsync(appNo!, amount, term, loanType, runId);
+            _logger.LogInformation("API: Recompute complete for {AppNo}", appNo);
+            return Ok(result);
         }
-
-        if (amount <= 0) amount = app.LoanAmountRequested;
-        if (term <= 0) term = app.RequestedTermMonths;
-        if (string.IsNullOrEmpty(loanType)) loanType = app.LoanType;
-
-        var quote = _plugins.ComputeQuote(appNo, amount, term, loanType);
-        var credit = _plugins.GetCreditProfile(appNo);
-        var income = _plugins.GetIncomeVerification(appNo);
-        var fraud = _plugins.GetFraudSignals(appNo);
-
-        double verifiedDti = income!.VerifiedMonthlyIncome > 0
-            ? Math.Round(app.TotalMonthlyDebtPayments / income.VerifiedMonthlyIncome, 4) : 999;
-
-        var rec = _plugins.EvaluateUnderwriting(runId, appNo, amount, term, loanType,
-            income.VerifiedMonthlyIncome, app.TotalMonthlyDebtPayments,
-            credit!.BureauScore, fraud!.IdentityRiskScore,
-            quote.PaymentToIncomePct, verifiedDti);
-
-        _logger.LogInformation("API: Recompute complete for {AppNo}: recommendation={Status}", appNo, rec.RecommendationStatus);
-        return Ok(new { quote, recommendation = rec });
+        catch (ArgumentException ex)
+        {
+            _logger.LogWarning("API: Recompute — invalid application_no: {AppNo} — {Message}", appNo, ex.Message);
+            return BadRequest(new { error_code = "BAD_REQUEST", message = ex.Message });
+        }
+        catch (InvalidOperationException ex)
+        {
+            _logger.LogError(ex, "API: Recompute agent error for {AppNo}: {Message}", appNo, ex.Message);
+            return StatusCode(503, new { error_code = "AGENT_UNAVAILABLE", message = ex.Message });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "API: Recompute unexpected error for {AppNo}: {Message}", appNo, ex.Message);
+            return StatusCode(500, new { error_code = "INTERNAL_ERROR", message = "Recompute failed." });
+        }
     }
 }
