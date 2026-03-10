@@ -170,19 +170,22 @@ The `infrastructure/` directory contains Terraform IaC that provisions **two AI 
 | `ai_foundry_projects.tf` | Two project modules: `project_classic` and `project_workflow` |
 | `project/` | Shared module for AI Foundry project + model deployments |
 | `network.tf` | VNet, subnets, NSGs, managed network integration |
+| `cae.tf` | Container App Environment for hosting applications |
+| `acr.tf` | Azure Container Registry for container images |
 | `logging.tf` | Log Analytics Workspace and diagnostics |
 | `roles.tf` | RBAC: OpenAI User, AI Developer, Project Manager |
-| `output.tf` | Outputs: `FOUNDRY_ENDPOINT`, `FOUNDRY_NEXTGEN_ENDPOINT` |
+| `output.tf` | Outputs: `APP_NAME`, `FOUNDRY_ENDPOINT`, `FOUNDRY_NEXTGEN_ENDPOINT`, `ACR_NAME` |
 
 ### Terraform Outputs
 
 | Output | Description |
 |--------|-------------|
-| `APP_NAME` | Resource name |
+| `APP_NAME` | Resource name (used as the single input to `app/` module) |
 | `APP_RESOURCE_GROUP` | Resource group name |
 | `OPENAI_ENDPOINT` | AI Foundry hub endpoint |
 | `FOUNDRY_ENDPOINT` | Classic project endpoint |
 | `FOUNDRY_NEXTGEN_ENDPOINT` | Workflow project endpoint |
+| `ACR_NAME` | Azure Container Registry name (used by `acr-build` tasks) |
 
 ### Model Deployments
 
@@ -212,9 +215,18 @@ scenario2/
 │   │   ├── ai_foundry_project.tf
 │   │   ├── ai_foundry_project_models.tf
 │   │   └── ...
+│   ├── acr.tf                     # Azure Container Registry
+│   ├── cae.tf                     # Container App Environment
 │   ├── roles.tf                   # RBAC role assignments (Entra ID)
-│   ├── output.tf                  # FOUNDRY_ENDPOINT + FOUNDRY_NEXTGEN_ENDPOINT
+│   ├── output.tf                  # APP_NAME, FOUNDRY_ENDPOINT, ACR_NAME
 │   └── ...                        # Network, logging, variables
+├── app/                           # Terraform for ACA deployment
+│   ├── containerapp-classic.tf    # Classic agent Container App
+│   ├── containerapp-workflow.tf   # Workflow agent Container App
+│   ├── identities.tf             # User Assigned Managed Identity
+│   ├── roles.tf                   # AcrPull, Cognitive Services User, AI Developer
+│   ├── references.tf             # Data sources (ACR, CAE, AI Services, App Insights)
+│   └── ...                        # main.tf, variables.tf, outputs.tf
 ├── materials/
 │   ├── data/                      # CSV sample data (6 files)
 │   │   ├── loan_application_register.csv
@@ -229,6 +241,7 @@ scenario2/
 ├── Taskfile.yaml                  # Root task runner (up, down, init, apply)
 ├── Taskfile.classic.yaml          # Classic-specific tasks (classic:agents, classic:run, etc.)
 ├── Taskfile.workflow.yaml         # Workflow-specific tasks (workflow:agents, workflow:run, etc.)
+├── Taskfile.app.yaml              # ACA deployment tasks (app:deploy, app:build, app:apply)
 ├── Taskfile.redteam.yaml          # Red team tasks (redteam:run, redteam:setup)
 │
 └── src/
@@ -285,6 +298,7 @@ scenario2/
 - Azure subscription with AI Foundry provisioned
 - Entra ID authentication (one of: Managed Identity, Service Principal env vars, or Azure CLI)
 - [Task](https://taskfile.dev/) runner (optional, for `task` commands)
+- Docker (for local container builds) or Azure CLI (for ACR builds)
 
 ### Quick Start with Taskfile
 
@@ -298,8 +312,64 @@ task classic:run       # Run on http://localhost:8081
 
 # ── Run the Workflow implementation ──
 task workflow:agents   # Create agents + workflow in Foundry
-task workflow:run      # Run on http://localhost:8081
+task workflow:run      # Run on http://localhost:8082
 ```
+
+### Deploy to Azure Container Apps
+
+The `app/` Terraform module deploys both implementations as Container Apps. It takes a single input — `APP_NAME` from the infrastructure outputs — and derives all resource names, endpoints, and connection strings by convention.
+
+```bash
+# 1. Provision infrastructure (if not already done)
+task up
+
+# 2. Initialize agents in Foundry
+task classic:agents
+task workflow:agents
+
+# 3. Initialize the app Terraform
+task app:init
+
+# 4. Build container images in ACR and deploy to ACA
+task app:deploy
+```
+
+This runs `az acr build` for both Dockerfiles against the provisioned ACR, then applies the `app/` Terraform which creates:
+
+- **Resource Group**: `{app_name}_apps_rg`
+- **Managed Identity**: `{app_name}-app-identity` with `AcrPull`, `Cognitive Services User`, and `Azure AI Developer` roles
+- **Container App (Classic)**: `{app_name}-classic` — connected to the classic Foundry project
+- **Container App (Workflow)**: `{app_name}-workflow` — connected to the workflow Foundry project
+
+You can also run the steps individually:
+
+```bash
+# Build images only (no deploy)
+task app:build
+
+# Deploy only (images must already exist in ACR)
+task app:apply
+
+# Tear down the Container Apps
+task app:destroy
+```
+
+#### Naming Convention
+
+All `app/` resources are derived from `APP_NAME` (e.g., `cub-34185`):
+
+| Resource | Derived Name |
+|----------|-------------|
+| Resource Group | `cub-34185_apps_rg` |
+| Identity | `cub-34185-app-identity` |
+| ACR | `cub34185acr` (looked up from `cub-34185-core_rg`) |
+| CAE | `cub-34185-env` (looked up from `cub-34185-core_rg`) |
+| Classic Container App | `cub-34185-classic` |
+| Workflow Container App | `cub-34185-workflow` |
+| Foundry Classic Endpoint | `https://cub-34185-foundry.services.ai.azure.com/api/projects/cub-34185-project-classic` |
+| Foundry Workflow Endpoint | `https://cub-34185-foundry.services.ai.azure.com/api/projects/cub-34185-project-workflow` |
+| App Insights (Classic) | `cub-34185-project-classic-appinsights` in `cub-34185-project-classic_rg` |
+| App Insights (Workflow) | `cub-34185-project-workflow-appinsights` in `cub-34185-project-workflow_rg` |
 
 ### Manual Steps
 
@@ -330,7 +400,7 @@ dotnet run -- --endpoint="$(terraform -chdir=../../infrastructure output -raw FO
 cd src/classic && dotnet run --urls "http://localhost:8081"
 
 # Workflow
-cd src/workflow && dotnet run --urls "http://localhost:8081"
+cd src/workflow && dotnet run --urls "http://localhost:8082"
 ```
 
 On startup, the application runs a health check against the health check agent in Foundry to verify end-to-end connectivity.
@@ -359,6 +429,16 @@ On startup, the application runs a health check against the health check agent i
 | `task apply` | Apply Terraform infrastructure |
 | `task down` | Destroy all Azure resources and clean up Terraform state |
 
+### App Deployment Tasks (`task app:*`)
+
+| Command | Description |
+|---------|-------------|
+| `task app:init` | Initialize Terraform for the `app/` module |
+| `task app:deploy` | Build ACR images + apply Terraform (full deploy) |
+| `task app:build` | Build both classic and workflow images in ACR |
+| `task app:apply` | Apply app Terraform only (images must exist) |
+| `task app:destroy` | Tear down the Container Apps |
+
 ### Classic Tasks (`task classic:*`)
 
 | Command | Description |
@@ -367,7 +447,8 @@ On startup, the application runs a health check against the health check agent i
 | `task classic:build` | Build the .NET web application |
 | `task classic:run` | Run the web application on port 8081 |
 | `task classic:clean` | Clean build artifacts |
-| `task classic:docker-build` | Build Docker container (tagged `loan-origination:classic`) |
+| `task classic:docker-build` | Build Docker container locally (tagged `loan-origination:classic`) |
+| `task classic:acr-build` | Build Docker container in ACR (tagged `loan-origination-classic:{sha}`) |
 | `task classic:docker-run` | Run Docker container locally |
 
 ### Workflow Tasks (`task workflow:*`)
@@ -376,9 +457,10 @@ On startup, the application runs a health check against the health check agent i
 |---------|-------------|
 | `task workflow:agents` | Create agents + workflow in Foundry (reads `FOUNDRY_NEXTGEN_ENDPOINT`) |
 | `task workflow:build` | Build the .NET web application |
-| `task workflow:run` | Run the web application on port 8081 |
+| `task workflow:run` | Run the web application on port 8082 |
 | `task workflow:clean` | Clean build artifacts |
-| `task workflow:docker-build` | Build Docker container (tagged `loan-origination:workflow`) |
+| `task workflow:docker-build` | Build Docker container locally (tagged `loan-origination:workflow`) |
+| `task workflow:acr-build` | Build Docker container in ACR (tagged `loan-origination-workflow:{sha}`) |
 | `task workflow:docker-run` | Run Docker container locally |
 
 ### Red Team Tasks (`task redteam:*`)
