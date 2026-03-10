@@ -39,9 +39,8 @@ tasks:
 
   docker-build:
     desc: Builds Docker container for {{.TITLE}}
-    dir: ./src/workflow/
     cmds:
-      - docker build -t loan-origination:{{.COMMIT_VERSION}} -t loan-origination:workflow .
+      - docker build -f src/workflow/Dockerfile -t loan-origination:{{.COMMIT_VERSION}} -t loan-origination:workflow .
     vars:
       COMMIT_VERSION:
         sh: git rev-parse HEAD | cut -c 1-8

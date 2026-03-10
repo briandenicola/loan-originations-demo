@@ -39,9 +39,8 @@ tasks:
 
   docker-build:
     desc: Builds Docker container for {{.TITLE}}
-    dir: ./src/classic/
     cmds:
-      - docker build -t loan-origination:{{.COMMIT_VERSION}} -t loan-origination:classic .
+      - docker build -f src/classic/Dockerfile -t loan-origination:{{.COMMIT_VERSION}} -t loan-origination:classic .
     vars:
       COMMIT_VERSION:
         sh: git rev-parse HEAD | cut -c 1-8
