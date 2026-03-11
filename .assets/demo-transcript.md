@@ -42,7 +42,7 @@ Quickly on the architecture. Three layers. The application runs in Azure Contain
 
 *[SE switches to Tab 1 — the application is already loaded]*
 
-I've got the application ready. Robert Chen, 22 thousand dollar auto loan, sixty-month term. The system has extracted all the fields from the loan application — identity, loan details, income, obligations. The officer reviews before the workflow starts. Let me kick off the agent workflow.
+I've got the application ready. We have a pull down pre-populated with your supplied sample data. I also created my own loan application that we can use as well.  The application can take an uploaded pdf and parse it. For this demo, let's use Robert Chen's reqwuest for a 22 thousand dollar auto loan with a sixty-month term. As you can see after I selected the loan, the system has extracted all the fields from the loan application — identity, loan details, income, obligations. The officer can review the details before the workflow starts. Let me kick off the agent workflow.
 
 *[SE clicks "Run Agent Workflow"]*
 
