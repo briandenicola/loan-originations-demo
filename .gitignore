@@ -58,6 +58,7 @@ terraform.rc
 
 # ── Project-specific ─────────────────────────────────────────
 materials/
+materials/data
 output/
 sample-data/
 
