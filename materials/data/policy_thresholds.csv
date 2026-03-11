@@ -1,0 +1,11 @@
+rule_id,metric,operator,threshold,severity,decision_effect,description
+POL-001,bureau_score,>=,700,INFO,NONE,Prime tier threshold for preferred pricing.
+POL-002,bureau_score,<,620,ERROR,DECLINE,Credit score below minimum policy.
+POL-003,verified_dti_pct,>,0.40,ERROR,DECLINE,Debt-to-income exceeds hard policy limit.
+POL-004,identity_risk_score,>,0.30,ERROR,DECLINE,Identity risk too high for lending policy.
+POL-005,identity_risk_score,>,0.20,WARN,CONDITIONAL,Manual fraud review required before approval.
+POL-006,income_verification_status,!=,VERIFIED,WARN,CONDITIONAL,Income variance requires documentation follow-up.
+POL-007,loan_amount_requested,>,20000,WARN,CONDITIONAL,High-ticket personal loan requires second-level review.
+POL-008,payment_to_income_pct,>,0.18,WARN,CONDITIONAL,Estimated payment burden is elevated.
+POL-009,declared_dti_pct,>,0.35,WARN,CONDITIONAL,Declared DTI is close to policy ceiling.
+POL-010,watchlist_hit_flag,=,Y,ERROR,DECLINE,Watchlist hit requires decline per compliance policy.
