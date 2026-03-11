@@ -144,6 +144,8 @@ The numbers: over 40 conversational turns. Thirty-eight commits. Eighty-plus fil
 
 For your engineering teams, this means the cost of experimentation drops dramatically. You try ten approaches, keep what works — because each one takes hours to build, not sprints.
 
+One more thing before I hand back to [CVP name]. We also built a Red Team agent using the Foundry Evals API. It's designed to adversarially test every agent in this workflow — probing for prompt injection, jailbreaks, off-topic responses, and policy violations. You can run it against individual agents or the entire end-to-end workflow. It's how you validate that the deterministic pipeline you just saw actually holds up under adversarial conditions — and it produces a scored report you can hand to your model risk management team. That's the kind of testing that regulators increasingly expect, and it's built right into the platform.
+
 ---
 
 ## Stage 5 — Why Foundry, Why Microsoft (15:00–18:00)
