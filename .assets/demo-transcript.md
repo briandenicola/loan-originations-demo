@@ -118,8 +118,8 @@ All output is captured in the output directory, and we can provide copies to you
 
 *[SE shows Application Insights]*
 All of the details are also captured in our Azure Monitoring tool called Application Insights. You're looking at the traces from the workflow we just ran. Every agent call — credit, income, fraud, policy, pricing, underwriting — shows up as a span in the distributed trace. You can see the duration of each call, the dependencies, any errors. This is OpenTelemetry flowing from the orchestrator through each Foundry agent invocation. This is not something we added after the fact. The tracing is baked into the orchestrator. Every workflow run is observable from day one.
-
 You can create dashboards and alert within our tool or the logs can be exported to any logging or SIEM tool you use for monitoring.
+
 ---
 
 ## Stage 4 — How This Was Built (13:00–15:00)
