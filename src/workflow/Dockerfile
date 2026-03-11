@@ -9,6 +9,7 @@ RUN dotnet restore src/workflow/LoanOrigination.csproj --runtime linux-x64
 # Copy application source and materials data
 COPY src/workflow/ ./src/workflow/
 COPY materials/ ./materials/
+COPY sample-data/ ./sample-data/
 
 RUN dotnet publish src/workflow/LoanOrigination.csproj -c Release \
     --runtime linux-x64 \

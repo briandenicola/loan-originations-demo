@@ -37,12 +37,12 @@ The orchestrator is code-based — deterministic C# calling every agent in seque
 **SE:**
 *[SE switches to Tab 0 — the architecture diagram]*
 
-Quickly on the architecture. Three layers. The application runs in Azure Container Apps — UI, API, orchestrator. In the middle, Azure AI Foundry with six specialist agents — credit, income, fraud, policy, pricing, and underwriting — each running GPT-4.1. GPT-5.4 could have been choosen but 4.1 is used in this demo for speed purposes. Of course, a newer model like GPT-5.4 would be better in production. At the bottom, full monitoring stack through OpenTelemetry and Application Insights.
+Quickly on to the architecture. The application runs in Azure Container Apps and has three layers: UI, API, orchestrator. The orchestrator calls Microsoft Foundry where six AI  agents — credit, income, fraud, policy, pricing, and underwriting — are running. Each agent uses GPT-4.1. New models could have been choosen but 4.1 was picked for this demo because of its speed compared to newer models. Of course, a model like GPT-5.2 or 5.4 would be better in production. Lastly, as you can see at the bottom of the diagram, we have a full monitoring stack through OpenTelemetry and Application Insights.
 
 
 *[SE switches to Tab 1 — the application is already loaded]*
 
-I've got the application ready. We have a pull down pre-populated with your supplied sample data. I also created my own loan application that we can use as well.  The application can take an uploaded pdf and parse it. For this demo, let's use Robert Chen's reqwuest for a 22 thousand dollar auto loan with a sixty-month term. As you can see after I selected the loan, the system has extracted all the fields from the loan application — identity, loan details, income, obligations. The officer can review the details before the workflow starts. Let me kick off the agent workflow.
+Okay, I've got the application ready. We have a pull down pre-populated with your supplied sample data. I also created my own loan application that we can use as well.  The application can take an uploaded pdf and parse it. For this demo, let's use Robert Chen's reqwuest for a 22 thousand dollar auto loan with a sixty-month term. As you can see after I selected the loan, the system has extracted all the fields from the loan application — identity, loan details, income, obligations. The officer can review the details before the workflow starts. Let me kick off the agent workflow.
 
 *[SE clicks "Run Agent Workflow"]*
 
