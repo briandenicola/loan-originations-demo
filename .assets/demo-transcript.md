@@ -37,14 +37,12 @@ The orchestrator is code-based — deterministic C# calling every agent in seque
 **SE:**
 *[SE switches to Tab 0 — the architecture diagram]*
 
-Quickly on the architecture. Three layers. The application runs in Azure Container Apps — UI, API, orchestrator. In the middle, Azure AI Foundry with six specialist agents — credit, income, fraud, policy, pricing, and underwriting — each running GPT-4.1. GPT-5.4 could have been choosen but 4.1 was for speed. GPT-5.4 would be better in production. At the bottom, full observability through OpenTelemetry into Application Insights.
+Quickly on the architecture. Three layers. The application runs in Azure Container Apps — UI, API, orchestrator. In the middle, Azure AI Foundry with six specialist agents — credit, income, fraud, policy, pricing, and underwriting — each running GPT-4.1. GPT-5.4 could have been choosen but 4.1 is used in this demo for speed purposes. Of course, a newer model like GPT-5.4 would be better in production. At the bottom, full monitoring stack through OpenTelemetry and Application Insights.
 
 
 *[SE switches to Tab 1 — the application is already loaded]*
 
-I've got the application ready. Robert Chen, fifty thousand dollar auto loan, sixty-month term. The system has extracted all the fields from the loan application — identity, loan details, income, obligations. Everything is editable. The officer reviews and corrects before the workflow starts.
-
-Let me kick off the agent workflow.
+I've got the application ready. We have a pull down pre-populated with your supplied sample data. I also created my own loan application that we can use as well.  The application can take an uploaded pdf and parse it. For this demo, let's use Robert Chen's reqwuest for a 22 thousand dollar auto loan with a sixty-month term. As you can see after I selected the loan, the system has extracted all the fields from the loan application — identity, loan details, income, obligations. The officer can review the details before the workflow starts. Let me kick off the agent workflow.
 
 *[SE clicks "Run Agent Workflow"]*
 
@@ -52,19 +50,15 @@ Let me kick off the agent workflow.
 
 **SE:**
 
-Watch the step cards. Each one streams in real time as it completes — Server-Sent Events, no polling.
-
-*[S01 completes]*
-
-S01 — Application accepted, record validated.
+The step cards are updated in real time as the agents are complete.  Each step is a call to a distinct AI agent.
 
 *[S02 completes]*
 
-S02 — All enrichment data loaded. Five API calls just fired — credit bureau, income verification, fraud signals, policy thresholds, pricing engine. In this demo those APIs are backed by CSV data. In production, those are your real bureau connections, payroll services, fraud network.
+So five calls were just fired off — credit bureau, income verification, fraud signals, policy thresholds, pricing engine. In this demo those APIs are backed by CSV data. In production, those are your real bureau connections, payroll services, fraud network.
 
 *[Steps starts, then completes]*
-It's going through the specialist agnets now. For example, Step 04 is credit analysis. It's looking at the bureau data, computing a credit score, evaluating delinquencies, utilization, inquiries, and writing up a narrative. This will take some time because it's doing real work in Foundry — not returning a canned response. In production, with the APIs and Foundry deployment co-located, this takes three to five seconds per specialist.
-The critical and step is S09 — the underwriting recommendation agent. This agent will receive a sixteen-thousand-character brief compiled from all five specialist agents. It will synthesizing credit, income, fraud, policy, and pricing into one recommendation.
+It's going through the specialist agents now. For example, Step 04 is credit agent. The agent is looking at the bureau data, computing a credit score, evaluating delinquencies, utilization, inquiries, and writing up a narrative. This will take some time because it's doing real work in our Foundry —service  not returning a canned response. In production, with the APIs and Foundry deployment co-located, this takes 5 to 10 seconds per specialist.
+The critical step is S09 — the underwriting recommendation agent. This agent will receive a character brief compiled from the other five agents. It will then generate one recommendation based on credit, income, fraud, policy, and pricing.
 
 *[pause briefly]*
 Okay I am going to switch over to a completed analysis to show off the Human in the Loop. We'll switch back in a little bit to show the completed workflow.
@@ -81,46 +75,47 @@ This is the review screen — what the loan officer sees.
 
 *[SE points to recommendation banner]*
 
-At the top — APPROVE, it shows the percent confidence. The AI explains its reasoning: "Strong credit profile, bureau score 720, Good band. Verified income supports the payment. No fraud indicators."
+At the top — CONDITIONAL, it shows the percent confidence. The AI explains its reasoning: "Robert T. Chen demonstrates strong overall credit and capacity metrics. His credit score of 758 places him well within the prime tier, with no recent delinquencies or derogatory credit history, and a well-established trade line history (over 6 years)"
 
 *[SE points to credit gauge and data grids]*
 
-Credit gauge — 720, Good band. Detailed data: delinquencies, utilization, hard inquiries, bankruptcy flag. Income verification — verified monthly income, employer match. Fraud signals — identity risk score, synthetic ID flag, watchlist hit.
-
-Every number came from an API. The AI agents analyzed this data — they did not generate it. That's the difference between an enterprise system and a chatbot.
+The sole condition to be resolved before approval is the standard collateral validation for high-ticket secured loans.
 
 *[SE points to explanation factors]*
 
-Key factors driving the recommendation. Credit score strength, DTI within policy limits, clean fraud screening. A compliance auditor can trace every factor back to a data source.
+Key factors driving the recommendation. It shows that the condition triggering the condionial approval is policy rule POL-007: loan amount requested > $20,000
 
 ### The Adjustment Loop
 
 **SE:**
 
-Now the human-in-the-loop moment. The borrower wants a lower amount. The officer wants to see how that changes things.
+Now the human-in-the-loop moment. The borrower wants a lower amount. The officer wants to see how that changes things. Let's change the amount to $19,999.
 
 *[SE changes loan amount from $50,000 to $35,000, clicks "Recalculate"]*
 
-The system is re-running the pricing and underwriting agents with the new terms. These are the actual Foundry agents re-evaluating — not a local calculation.  It will take a moment to recalculate so let's switch back to the original workflow to see how its progressing.
-
-Okay. Good. It's still progressing and as you can see the workflow is updating as each agent completes its work. Let's switch back to the review dashboard.
+The system is re-running the pricing and underwriting agents with the new terms. These are the actual Foundry agents re-evaluating — not a local calculation.  It will take about a minute to recalculate so let's switch to a couple other runs that I've already performed.  This one is for John Doe.  It's reasoning for approval is stated as - John A. Doe demonstrates strong creditworthiness, with a "Good" bureau score of 688 (Tier B), no recent delinquencies, and a well-established credit history (102 months oldest tradeline). Verified income is $4,550/month, from 24 months of payroll records with a 98% employer match and only 1.6% variance, supporting a computed DTI of just 13.8%—
 
 *[Results return]*
-
-Pricing updated — lower monthly payment, better payment-to-income ratio. Confidence may have shifted. And the prior snapshot is preserved — the audit trail shows the recommendation at fifty thousand, the new one at thirty-five thousand, and what the officer ultimately decides.
+Okay. Let's switch back to the recalculation.  As you can see the UI adjusted to RECOMPUTED and the recommnedation status is APPROVED.
 
 ### Final Decision
 
 **SE:**
 
-Officer is satisfied. They click Approve.
+So now the Officer is satisfied. They click Approve.
 
 *[SE clicks "Approve"]*
 
 Decision captured — reviewer ID, timestamp, the recommendation at decision time, final terms. Everything a compliance team needs to reconstruct this decision six months from now.  
 
 *[SE shows Explorer with the output folder]*
-All output is captured in the output directory, and we can provide copies to you after the session. 
+All output is captured in the output directory, and we can provide copies to you after the session.  
+
+
+*[SE shows Application Insights*
+It is also captured in our Azure Monitoring tool called Application Insights. You're looking at the traces from the workflow we just ran. Every agent call — credit, income, fraud, policy, pricing, underwriting — shows up as a span in the distributed trace. You can see the duration of each call, the dependencies, any errors. This is OpenTelemetry flowing from the orchestrator through each Foundry agent invocation. This is not something we added after the fact. The tracing is baked into the orchestrator. Every workflow run is observable from day one.
+
+All of this data is stored in Azure Log Analytics that can be exported to any logging or SIEM tool you use from which you can create custom dashboards, alerts and reports.
 
 ---
 
@@ -132,7 +127,7 @@ Now I want to show you how this was built — because this is a story in itself.
 
 *[SE switches to Tab 4 — README or slide with build stats]*
 
-This entire system — infrastructure, backend, frontend, agents, deployment — was built in using GitHub Copilot CLI. Zero lines of manually written code.
+This entire system — infrastructure, backend, frontend, agents, deployment — was built in using GitHub Copilot CLI. 99% of the lines of written were written by the AI.
 
 It started with one prompt: "I need to create a demo of an agent system based on the instructions.md file. This demo must showcase Microsoft Foundry. Let's build."
 
@@ -156,29 +151,9 @@ Thanks [SE name]. Now I want to land something important. You've seen what the s
 
 ### Governance as Architecture
 
-Let's start with governance — because for financial institutions, this is the whole ball game.
+Let's start with governance — because for financial institutions, this is the whole ball game.Now let me talk about what makes Foundry different from the alternatives.
 
-Every piece of data in this system is exposed through APIs. The same APIs that the AI agents consume are available to Power BI, Tableau, Grafana — whatever your teams use. Credit scores, fraud signals, income verification, pricing, AI recommendations — all queryable. Your compliance team can build a Fair Lending dashboard. Your ops team can build a fraud operations view. Your audit team can reconstruct any loan decision. The AI agents are not black boxes. They're calling APIs that you control, that you can instrument, that you can log. That's the difference between a governed system and an ungoverned one.
-
-*[SE switches to Tab 2 — Application Insights]*
-
-And here's our Azure Monitoring tool called Application Insights. You're looking at the traces from the workflow we just ran. Every agent call — credit, income, fraud, policy, pricing, underwriting — shows up as a span in the distributed trace. You can see the duration of each call, the dependencies, any errors. This is OpenTelemetry flowing from the orchestrator through each Foundry agent invocation. This is not something we added after the fact. The tracing is baked into the orchestrator. Every workflow run is observable from day one.
-
-All of this data is stored in Azure Log Analytics that can be exported to any logging or SIEM tool you use from which you can create custom dashboards, alerts and reports.
-
-**CVP:**
-
-Now let me talk about what makes Foundry different from the alternatives.
-
-###  AWS
-
-If you build this on AWS, you're stitching together Bedrock Agents, Step Functions, Lambda, and CloudWatch. Each service has its own identity model, its own tracing, its own deployment mechanism. You can make it work — but you're building the control plane yourself.
-
-In Foundry, the agents are registered resources. They have versioned instruction sets. They're secured with Entra ID — the same identity system your organization already runs. A platform team can inventory every agent, audit its instructions, and control access through the same role-based policies they use for everything else. That's not possible when your agents are anonymous Lambda functions behind a Bedrock endpoint.
-
-Observability is a single place. The workflow we just ran — S01 through S10 — appears as distributed traces in Application Insights. 
-
-And the infrastructure is Terraform-managed. The entire environment — Foundry hub, projects, model deployments, agents, Container Apps, networking, RBAC — deploys with one command. This is not a console-click demo. This is infrastructure as code that a platform team can review, version, and promote through environments.
+In Foundry, the agents are registered resources. They have versioned instruction sets. They're secured with Entra ID — the same identity system your organization already runs. A platform team can inventory every agent, audit its instructions, and control access through the same role-based policies they use for everything else. That's not possible when your agents are anonymous Lambda functions behind an AWS Bedrock endpoint.
 
 
 ### The Microsoft Platform Story
@@ -193,7 +168,7 @@ Third — a control plane for AI. Foundry is not just a model endpoint. It's whe
 
 And fourth — and this is where the roadmap gets compelling — Agent365. Microsoft is rolling out Agent365 as the enterprise-wide governance layer for AI agents. Think of it as the control plane above Foundry. Every agent — whether it's built in Foundry, Copilot Studio, or a third-party framework — gets registered in a central directory. Each agent receives a unique Agent ID. IT applies access policies, lifecycle management, and conditional controls — the same way they manage employee identities today, but for AI agents.
 
-What does that mean for this system? The six specialist agents we just ran — credit, income, fraud, policy, pricing, underwriting — each one would appear in Agent365's registry. Your security team can see them alongside every other agent in the organization. They can audit the instructions, review the access policies, monitor behavior, and flag anything unsanctioned. There's an "Agent Map" that visualizes the relationships between agents, users, and data — so you can see exactly which agents are accessing which data sources and who authorized them.
+What does that mean for this system? The six agents we just ran — credit, income, fraud, policy, pricing, underwriting — each one would appear in Agent365's registry. Your security team can see them alongside every other agent in the organization. They can audit the instructions, review the access policies, monitor behavior, and flag anything unsanctioned. There's an "Agent Map" that visualizes the relationships between agents, users, and data — so you can see exactly which agents are accessing which data sources and who authorized them. 
 
 This matters because the number-one governance problem in AI right now is agent sprawl. Microsoft's own research says nearly thirty percent of Fortune 500 AI agents are running without IT approval. Agent365 closes that gap. And because the agents we built in Foundry are already registered resources with Entra ID identities, they integrate into Agent365 natively. There's no retrofit. No migration. You're building on the platform that the governance layer is designed for.
 
@@ -217,7 +192,7 @@ This is what AI-powered financial services looks like when it's built on the rig
 
 The pattern works beyond loan origination — insurance underwriting, credit line reviews, KYC, account opening. Any workflow where you ingest, enrich, analyze, recommend, and let a human decide.
 
-The next step is straightforward. Connect these APIs to your real data sources — your credit bureaus, your payroll providers, your fraud network. The agents, the orchestration, the audit trail, and the human review experience are ready.
+The next step is straightforward. Let us help you develop your next generation applications on top of our Microsoft AI platform. 
 
 Thank you. We'd love to take your questions.
 

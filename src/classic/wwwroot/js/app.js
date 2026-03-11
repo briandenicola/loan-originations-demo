@@ -145,24 +145,75 @@ async function loadApplication() {
 
     const res = await fetch(`${API}/api/v1/applications/${appNo}`);
     currentApp = await res.json();
-
-    document.getElementById('fName').value = currentApp.applicantName;
-    document.getElementById('fAppNo').value = currentApp.applicationNo;
-    document.getElementById('fDob').value = currentApp.dob;
-    document.getElementById('fDate').value = currentApp.applicationDate;
-    document.getElementById('fEmail').value = currentApp.email;
-    document.getElementById('fPhone').value = currentApp.phone;
-    document.getElementById('fAddress').value = `${currentApp.currentAddress}, ${currentApp.cityStateZip}`;
-    document.getElementById('fAmount').value = currentApp.loanAmountRequested;
-    document.getElementById('fTerm').value = currentApp.requestedTermMonths;
-    document.getElementById('fPurpose').value = currentApp.loanPurpose;
-    document.getElementById('fType').value = currentApp.loanType;
-    document.getElementById('fIncome').value = currentApp.grossAnnualIncome;
-    document.getElementById('fMonthly').value = currentApp.monthlyNetIncome;
-    document.getElementById('fDebt').value = currentApp.totalMonthlyDebtPayments;
-    document.getElementById('fHousing').value = currentApp.housingPaymentMonthly;
-
+    populateForm(currentApp);
     document.getElementById('appForm').style.display = 'block';
+}
+
+function populateForm(app) {
+    document.getElementById('fName').value = app.applicantName || '';
+    document.getElementById('fAppNo').value = app.applicationNo || '';
+    document.getElementById('fDob').value = app.dob || '';
+    document.getElementById('fDate').value = app.applicationDate || '';
+    document.getElementById('fEmail').value = app.email || '';
+    document.getElementById('fPhone').value = app.phone || '';
+    document.getElementById('fAddress').value = [app.currentAddress, app.cityStateZip].filter(Boolean).join(', ');
+    document.getElementById('fAmount').value = app.loanAmountRequested || '';
+    document.getElementById('fTerm').value = app.requestedTermMonths || '';
+    document.getElementById('fPurpose').value = app.loanPurpose || '';
+    document.getElementById('fType').value = app.loanType || '';
+    document.getElementById('fIncome').value = app.grossAnnualIncome || '';
+    document.getElementById('fMonthly').value = app.monthlyNetIncome || '';
+    document.getElementById('fDebt').value = app.totalMonthlyDebtPayments || '';
+    document.getElementById('fHousing').value = app.housingPaymentMonthly || '';
+}
+
+// ── PDF Upload ────────────────────────────────────────────────
+function handleDrop(e) {
+    e.preventDefault();
+    e.currentTarget.classList.remove('dragover');
+    const file = e.dataTransfer.files[0];
+    if (file && file.name.toLowerCase().endsWith('.pdf')) uploadPdf(file);
+}
+
+function handleFileSelect(input) {
+    const file = input.files[0];
+    if (file) uploadPdf(file);
+}
+
+async function uploadPdf(file) {
+    const zone = document.getElementById('uploadZone');
+    const content = zone.querySelector('.upload-content');
+    const progress = document.getElementById('uploadProgress');
+    const success = document.getElementById('uploadSuccess');
+
+    content.style.display = 'none';
+    success.style.display = 'none';
+    progress.style.display = 'flex';
+
+    try {
+        const formData = new FormData();
+        formData.append('file', file);
+
+        const res = await fetch(`${API}/api/v1/applications/upload`, { method: 'POST', body: formData });
+        if (!res.ok) {
+            const err = await res.json();
+            throw new Error(err.message || 'Upload failed');
+        }
+
+        currentApp = await res.json();
+        populateForm(currentApp);
+        document.getElementById('appForm').style.display = 'block';
+
+        document.getElementById('appSelect').value = '';
+
+        progress.style.display = 'none';
+        document.getElementById('uploadFileName').textContent = file.name;
+        success.style.display = 'block';
+    } catch (err) {
+        progress.style.display = 'none';
+        content.style.display = 'block';
+        alert(`PDF upload failed: ${err.message}`);
+    }
 }
 
 // ── Run Agent Workflow ────────────────────────────────────────

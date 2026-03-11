@@ -94,6 +94,7 @@ builder.Services.AddCors(o => o.AddDefaultPolicy(p => p.AllowAnyOrigin().AllowAn
 // Register core services
 builder.Services.AddSingleton<CsvDataService>();
 builder.Services.AddSingleton<UnderwritingService>();
+builder.Services.AddSingleton<PdfParsingService>();
 builder.Services.AddSingleton<LoanAgentPlugins>();
 
 // Build Entra ID credential chain: Azure CLI → Environment → Managed Identity

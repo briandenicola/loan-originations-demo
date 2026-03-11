@@ -37,6 +37,22 @@
                         <option value="">— Choose an application —</option>
                     </select>
                 </div>
+                <div class="upload-divider"><span>or upload a PDF application</span></div>
+                <div class="upload-zone" id="uploadZone" ondrop="handleDrop(event)" ondragover="event.preventDefault(); this.classList.add('dragover')" ondragleave="this.classList.remove('dragover')">
+                    <input type="file" id="pdfInput" accept=".pdf" onchange="handleFileSelect(this)" style="display:none">
+                    <div class="upload-content">
+                        <span class="upload-icon">📄</span>
+                        <p>Drag & drop a loan application PDF here</p>
+                        <button class="btn btn-outline" type="button" onclick="document.getElementById('pdfInput').click()">Browse Files</button>
+                    </div>
+                    <div class="upload-progress" id="uploadProgress" style="display:none">
+                        <div class="spinner"></div>
+                        <p>Parsing PDF application...</p>
+                    </div>
+                    <div class="upload-success" id="uploadSuccess" style="display:none">
+                        <span>✅</span> <span id="uploadFileName"></span> — parsed successfully
+                    </div>
+                </div>
                 <div id="appForm" style="display:none">
                     <div class="form-grid">
                         <div class="form-group">
