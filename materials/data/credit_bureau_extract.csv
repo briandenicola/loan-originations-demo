@@ -1,0 +1,6 @@
+application_no,bureau_score,score_band,delinquencies_24m,utilization_pct,hard_inquiries_6m,bankruptcy_flag,oldest_trade_line_months,total_open_tradelines
+CBA-2026-04837,688,GOOD,0,31.4,2,N,102,9
+CBA-2026-03912,642,FAIR,1,57.8,4,N,134,12
+CBA-2026-04902,671,GOOD,0,29.1,1,N,88,7
+CBA-2026-04201,758,VERY_GOOD,0,18.2,1,N,74,8
+CBA-0044-00001,712,GOOD,0,43.4,1,N,180,15

@@ -1,0 +1,6 @@
+application_no,identity_risk_score,device_risk_score,address_mismatch_flag,synthetic_id_flag,watchlist_hit_flag,recommended_manual_review
+CBA-2026-04837,0.11,0.08,N,N,N,N
+CBA-2026-03912,0.19,0.22,N,N,N,N
+CBA-2026-04902,0.26,0.14,N,N,N,Y
+CBA-2026-04201,0.09,0.06,N,N,N,N
+CBA-0044-00001,0.35,0.12,N,N,N,Y
