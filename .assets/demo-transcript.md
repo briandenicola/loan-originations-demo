@@ -42,7 +42,7 @@ Quickly on to the architecture. The application runs in Azure Container Apps and
 
 *[SE switches to Tab 1 — the application is already loaded]*
 
-Okay, I've got the application ready. We have a pull down pre-populated with your supplied sample data. I also created my own loan application that we can use as well.  The application can take an uploaded pdf and parse it. For this demo, let's use Robert Chen's reqwuest for a 22 thousand dollar auto loan with a sixty-month term. As you can see after I selected the loan, the system has extracted all the fields from the loan application — identity, loan details, income, obligations. The officer can review the details before the workflow starts. Let me kick off the agent workflow.
+Okay, I've got the application ready. We have a pull down pre-populated with your supplied sample data. I've also created my own loan application that we can use as well.  The application will take the uploaded PDF and parse it. But for this demo, let's use Robert Chen's request for a 22 thousand dollar auto loan with a sixty-month term. As you can see after I selected the loan, the system has extracted all the fields from the loan application — identity, loan details, income, obligations. The loan officer can review the details before the workflow starts. Let me kick off the agent workflow.
 
 *[SE clicks "Run Agent Workflow"]*
 
@@ -54,14 +54,18 @@ The step cards are updated in real time as the agents are complete.  Each step i
 
 *[S02 completes]*
 
-So five calls were just fired off — credit bureau, income verification, fraud signals, policy thresholds, pricing engine. In this demo those APIs are backed by CSV data. In production, those are your real bureau connections, payroll services, fraud network.
+So five calls will be fired off — credit bureau, income verification, fraud signals, policy thresholds, pricing engine. In this demo those APIs are backed by CSV data. In production, those are your real bureau connections, payroll services, fraud network.
 
 *[Steps starts, then completes]*
-It's going through the specialist agents now. For example, Step 04 is credit agent. The agent is looking at the bureau data, computing a credit score, evaluating delinquencies, utilization, inquiries, and writing up a narrative. This will take some time because it's doing real work in our Foundry —service  not returning a canned response. In production, with the APIs and Foundry deployment co-located, this takes 5 to 10 seconds per specialist.
+It's going through the specialist agents now. For example, Step 04 is credit agent. The agent is looking at the bureau data, computing a credit score, evaluating delinquencies, utilization, inquiries, and writing up a narrative. 
+
+*[SE scrolls down the page]*
+
+This will take some time because it's doing real work in our Foundry service  not returning a canned response. In production, with the APIs and Foundry deployment co-located, this takes 5 to 10 seconds per specialist.
 The critical step is S09 — the underwriting recommendation agent. This agent will receive a character brief compiled from the other five agents. It will then generate one recommendation based on credit, income, fraud, policy, and pricing.
 
 *[pause briefly]*
-Okay I am going to switch over to a completed analysis to show off the Human in the Loop. We'll switch back in a little bit to show the completed workflow.
+Okay I am going to switch over to a completed analysis to show off the Human in the Loop. We can switch back in a little bit to show the completed workflow, if we have time.
 
 ---
 
@@ -93,7 +97,7 @@ Now the human-in-the-loop moment. The borrower wants a lower amount. The officer
 
 *[SE changes loan amount from $50,000 to $35,000, clicks "Recalculate"]*
 
-The system is re-running the pricing and underwriting agents with the new terms. These are the actual Foundry agents re-evaluating — not a local calculation.  It will take about a minute to recalculate so let's switch to a couple other runs that I've already performed.  This one is for John Doe.  It's reasoning for approval is stated as - John A. Doe demonstrates strong creditworthiness, with a "Good" bureau score of 688 (Tier B), no recent delinquencies, and a well-established credit history (102 months oldest tradeline). Verified income is $4,550/month, from 24 months of payroll records with a 98% employer match and only 1.6% variance, supporting a computed DTI of just 13.8%—
+The system is re-running the pricing and underwriting agents with the new terms. These are the actual Foundry agents re-evaluating — not a local calculation.  It will take about a minute to recalculate so let's switch to a couple other runs that I've already performed.  This one is for John Doe.  It's reasoning for approval is stated as - John A. Doe demonstrates strong creditworthiness, with a "Good" bureau score of 688 (Tier B), no recent delinquencies, and a well-established credit history (102 months oldest tradeline). 
 
 *[Results return]*
 Okay. Let's switch back to the recalculation.  As you can see the UI adjusted to RECOMPUTED and the recommnedation status is APPROVED.
@@ -112,11 +116,10 @@ Decision captured — reviewer ID, timestamp, the recommendation at decision tim
 All output is captured in the output directory, and we can provide copies to you after the session.  
 
 
-*[SE shows Application Insights*
-It is also captured in our Azure Monitoring tool called Application Insights. You're looking at the traces from the workflow we just ran. Every agent call — credit, income, fraud, policy, pricing, underwriting — shows up as a span in the distributed trace. You can see the duration of each call, the dependencies, any errors. This is OpenTelemetry flowing from the orchestrator through each Foundry agent invocation. This is not something we added after the fact. The tracing is baked into the orchestrator. Every workflow run is observable from day one.
+*[SE shows Application Insights]*
+All of the details are also captured in our Azure Monitoring tool called Application Insights. You're looking at the traces from the workflow we just ran. Every agent call — credit, income, fraud, policy, pricing, underwriting — shows up as a span in the distributed trace. You can see the duration of each call, the dependencies, any errors. This is OpenTelemetry flowing from the orchestrator through each Foundry agent invocation. This is not something we added after the fact. The tracing is baked into the orchestrator. Every workflow run is observable from day one.
 
-All of this data is stored in Azure Log Analytics that can be exported to any logging or SIEM tool you use from which you can create custom dashboards, alerts and reports.
-
+You can create dashboards and alert within our tool or the logs can be exported to any logging or SIEM tool you use for monitoring.
 ---
 
 ## Stage 4 — How This Was Built (13:00–15:00)
