@@ -48,25 +48,25 @@ resource "azurerm_subnet" "nodes" {
 
 }
 
-resource "azapi_update_resource" "nodes_delegation" {
-  type        = "Microsoft.Network/virtualNetworks/subnets@2023-04-01"
-  resource_id = azurerm_subnet.nodes.id
+# resource "azapi_update_resource" "nodes_delegation" {
+#   type        = "Microsoft.Network/virtualNetworks/subnets@2023-04-01"
+#   resource_id = azurerm_subnet.nodes.id
 
-  body = {
-    properties= {
-      delegations = [{
-        name = "Microsoft.App.environment"
+#   body = {
+#     properties= {
+#       delegations = [{
+#         name = "Microsoft.App.environment"
 
-        properties = {
-          serviceName = "Microsoft.App/environments"
-          actions = [
-            "Microsoft.Network/virtualNetworks/subnets/join/action"
-          ]
-        }
-      }]
-    }
-  }
-}
+#         properties = {
+#           serviceName = "Microsoft.App/environments"
+#           actions = [
+#             "Microsoft.Network/virtualNetworks/subnets/join/action"
+#           ]
+#         }
+#       }]
+#     }
+#   }
+# }
 
 resource "azurerm_network_security_group" "this" {
   name                = local.nsg_name

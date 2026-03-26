@@ -30,7 +30,6 @@ tasks:
     cmds:
       - dotnet run --urls "http://localhost:{{.APP_PORT}}"
 
-
   clean:
     desc: Cleans build artifacts
     cmds:
