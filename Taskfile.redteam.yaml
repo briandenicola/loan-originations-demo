@@ -8,19 +8,19 @@ tasks:
   setup:
     desc: Install Red Team Agent dependencies
     cmds:
-      - python -m venv {{.VENV_DIR}}
-      - "{{.VENV_DIR}}/Scripts/pip install -r {{.REDTEAM_DIR}}/requirements.txt"
+      - python -m venv {{.VENV_DIR}} 
+      - source {{.VENV_DIR}}/bin/activate && pip install -r {{.REDTEAM_DIR}}/requirements.txt
     status:
       - test -d {{.VENV_DIR}}
 
   run:
     desc: Run AI Red Teaming against all Loan Origination agents
     deps: [setup]
-    cmds:
-      - "{{.VENV_DIR}}/Scripts/python {{.REDTEAM_DIR}}/run_redteam.py"
-    env:
-      PROJECT_ENDPOINT:
+    vars:
+      FOUNDRY_ENDPOINT:
         sh: terraform -chdir=./infrastructure output -raw FOUNDRY_NEXTGEN_ENDPOINT 2>/dev/null || echo ""
+    cmds:
+      - source {{.VENV_DIR}}/bin/activate && python {{.REDTEAM_DIR}}/run_redteam.py --project-endpoint {{.FOUNDRY_ENDPOINT}}
 
   clean:
     desc: Remove Red Team virtual environment

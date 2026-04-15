@@ -54,7 +54,7 @@ tasks:
       REGION: "{{default .DEFAULT_REGION .CLI_ARGS}}"
 
   output:
-    desc:Shows Terraform outputs for {{.TITLE}}
+    desc: Shows Terraform outputs for {{.TITLE}}
     cmds:
       - terraform -chdir=./infrastructure output
 

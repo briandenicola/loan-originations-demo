@@ -28,32 +28,37 @@ pip install -r requirements.txt
 
 ## Configuration
 
-Set environment variables or use defaults from the workflow project:
+All options can be set via CLI arguments, environment variables, or Taskfile (which sources from Terraform output). CLI arguments take precedence over environment variables.
 
-| Variable | Description | Default |
-|----------|-------------|---------|
-| `PROJECT_ENDPOINT` | Foundry project endpoint | From `appsettings.json` |
-| `AGENT_NAMES` | Comma-separated agent names to test | All 6 specialist agents |
-| `ATTACK_STRATEGIES` | Comma-separated attack strategies | `Flip,Base64,IndirectJailbreak` |
-| `NUM_TURNS` | Multi-turn conversation depth | `5` |
+| CLI Argument | Env Variable | Description | Default |
+|---|---|---|---|
+| `--project-endpoint` | `PROJECT_ENDPOINT` | Foundry project endpoint | Hardcoded workflow project |
+| `--agents` | `AGENT_NAMES` | Comma-separated agent names to test | All 6 specialist agents |
+| `--attack-strategies` | `ATTACK_STRATEGIES` | Comma-separated attack strategies | `Flip,Base64,IndirectJailbreak` |
+| `--num-turns` | `NUM_TURNS` | Multi-turn conversation depth | `5` |
+| `--model-deployment` | `MODEL_DEPLOYMENT_NAME` | Model deployment for evaluators | `gpt-4.1` |
+| `--output-dir` | — | Directory for result files | `output/` |
 
 ## Usage
 
 ```bash
-# Run red teaming against all agents
-python run_redteam.py
+# Run via Taskfile (auto-reads endpoint from Terraform output)
+task redteam:run
+
+# Run directly with explicit endpoint from Terraform
+python run_redteam.py --project-endpoint "$(terraform -chdir=./infrastructure output -raw FOUNDRY_NEXTGEN_ENDPOINT)"
+
+# Run with endpoint as environment variable
+PROJECT_ENDPOINT=https://my-foundry.services.ai.azure.com/api/projects/my-project python run_redteam.py
 
 # Target specific agents
-AGENT_NAMES=credit-profile-agent,fraud-screening-agent python run_redteam.py
+python run_redteam.py --project-endpoint "$(terraform -chdir=./infrastructure output -raw FOUNDRY_NEXTGEN_ENDPOINT)" --agents credit-profile-agent,fraud-screening-agent
 
 # Custom attack strategies
-ATTACK_STRATEGIES=Flip,Base64 NUM_TURNS=3 python run_redteam.py
-```
+python run_redteam.py --attack-strategies Flip,Base64 --num-turns 3
 
-Or via Taskfile:
-
-```bash
-task redteam:run
+# Show all options
+python run_redteam.py --help
 ```
 
 ## Output

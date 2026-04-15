@@ -10,6 +10,7 @@ NOTE: Red team evaluation runs require a supported region (e.g., eastus2,
 westus3). Canada East is NOT currently supported.
 """
 
+import argparse
 import json
 import os
 import time
@@ -28,9 +29,8 @@ from azure.identity import DefaultAzureCredential
 
 # ── Configuration ─────────────────────────────────────────────────────────────
 
-PROJECT_ENDPOINT = os.environ.get(
-    "PROJECT_ENDPOINT",
-    "https://ostrich-61739-foundry.services.ai.azure.com/api/projects/ostrich-61739-project-workflow",
+DEFAULT_PROJECT_ENDPOINT = (
+    "https://mayfly-47401-foundry.services.ai.azure.com/api/projects/mayfly-47401-project-workflow"
 )
 
 DEFAULT_AGENTS = [
@@ -42,39 +42,77 @@ DEFAULT_AGENTS = [
     "underwriting-recommendation-agent",
 ]
 
-AGENT_NAMES = os.environ.get("AGENT_NAMES", "").split(",") if os.environ.get("AGENT_NAMES") else DEFAULT_AGENTS
-ATTACK_STRATEGIES = os.environ.get("ATTACK_STRATEGIES", "Flip,Base64,IndirectJailbreak").split(",")
-NUM_TURNS = int(os.environ.get("NUM_TURNS", "5"))
-MODEL_DEPLOYMENT = os.environ.get("MODEL_DEPLOYMENT_NAME", "gpt-4.1")
 API_VERSION = "2025-05-15-preview"
-
-OUTPUT_DIR = Path(__file__).resolve().parent.parent.parent / "output"
-OUTPUT_DIR.mkdir(exist_ok=True)
 
 POLL_INTERVAL_SECONDS = 15
 POLL_TIMEOUT_SECONDS = 900
 
 
-def banner():
+def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
+    """Parse CLI arguments with environment-variable fallbacks."""
+    parser = argparse.ArgumentParser(
+        description="Run AI red teaming evaluations against Loan Origination agents.",
+    )
+    parser.add_argument(
+        "--project-endpoint",
+        default=os.environ.get("PROJECT_ENDPOINT", DEFAULT_PROJECT_ENDPOINT),
+        help=(
+            "Azure AI Foundry project endpoint URL. "
+            "Can also be set via PROJECT_ENDPOINT env var or sourced from "
+            "'terraform output -raw FOUNDRY_NEXTGEN_ENDPOINT'. "
+            "(default: %(default)s)"
+        ),
+    )
+    parser.add_argument(
+        "--agents",
+        default=os.environ.get("AGENT_NAMES", ""),
+        help="Comma-separated agent names to test (default: all 6 specialist agents).",
+    )
+    parser.add_argument(
+        "--attack-strategies",
+        default=os.environ.get("ATTACK_STRATEGIES", "Flip,Base64,IndirectJailbreak"),
+        help="Comma-separated attack strategies (default: %(default)s).",
+    )
+    parser.add_argument(
+        "--num-turns",
+        type=int,
+        default=int(os.environ.get("NUM_TURNS", "5")),
+        help="Multi-turn conversation depth (default: %(default)s).",
+    )
+    parser.add_argument(
+        "--model-deployment",
+        default=os.environ.get("MODEL_DEPLOYMENT_NAME", "gpt-4.1"),
+        help="Model deployment name for evaluators (default: %(default)s).",
+    )
+    parser.add_argument(
+        "--output-dir",
+        type=Path,
+        default=Path(__file__).resolve().parent.parent.parent / "output",
+        help="Directory for result files (default: %(default)s).",
+    )
+    return parser.parse_args(argv)
+
+
+def banner(cfg: argparse.Namespace):
     print("=" * 70)
     print("  🔴 AI Red Teaming Agent — Azure AI Foundry")
     print("  Loan Origination Specialist Agent Security Evaluation")
     print("=" * 70)
-    print(f"  Project:     {PROJECT_ENDPOINT}")
-    print(f"  Agents:      {', '.join(AGENT_NAMES)}")
-    print(f"  Attacks:     {', '.join(ATTACK_STRATEGIES)}")
-    print(f"  Turns:       {NUM_TURNS}")
-    print(f"  Model:       {MODEL_DEPLOYMENT}")
-    print(f"  Output:      {OUTPUT_DIR}")
+    print(f"  Project:     {cfg.project_endpoint}")
+    print(f"  Agents:      {', '.join(cfg.agent_names)}")
+    print(f"  Attacks:     {', '.join(cfg.attack_strategies)}")
+    print(f"  Turns:       {cfg.num_turns}")
+    print(f"  Model:       {cfg.model_deployment}")
+    print(f"  Output:      {cfg.output_dir}")
     print("=" * 70)
     print()
 
 
-def resolve_agent_version(project_client: AIProjectClient, agent_name: str) -> str:
+def resolve_agent_version(project_client: AIProjectClient, agent_name: str, project_endpoint: str) -> str:
     """Resolve the latest version string for a named agent via REST."""
     req = HttpRequest(
         method="GET",
-        url=f"{PROJECT_ENDPOINT}/agents/{agent_name}?api-version={API_VERSION}",
+        url=f"{project_endpoint}/agents/{agent_name}?api-version={API_VERSION}",
     )
     resp = project_client.send_request(req)
     if resp.status_code != 200:
@@ -84,7 +122,7 @@ def resolve_agent_version(project_client: AIProjectClient, agent_name: str) -> s
     return latest.get("version", "1")
 
 
-def create_eval(oai_client, agent_name: str) -> str:
+def create_eval(oai_client, agent_name: str, model_deployment: str) -> str:
     """Create a red team eval group with built-in safety evaluators."""
     print(f"  📋 Creating eval for '{agent_name}'...")
 
@@ -103,7 +141,7 @@ def create_eval(oai_client, agent_name: str) -> str:
                 "name": "Task Adherence",
                 "evaluator_name": "builtin.task_adherence",
                 "evaluator_version": "1",
-                "initialization_parameters": {"deployment_name": MODEL_DEPLOYMENT},
+                "initialization_parameters": {"deployment_name": model_deployment},
             },
             {
                 "type": "azure_ai_evaluator",
@@ -140,11 +178,11 @@ def create_taxonomy(project_client: AIProjectClient, agent_name: str, agent_vers
     return taxonomy_id
 
 
-def create_run(oai_client, eval_id: str, agent_name: str, agent_version: str, taxonomy_id: str) -> str:
+def create_run(oai_client, eval_id: str, agent_name: str, agent_version: str, taxonomy_id: str, *, attack_strategies: list[str], num_turns: int) -> str:
     """Create a red teaming run with attack strategies."""
     print(f"  🚀 Starting run for '{agent_name}'...")
-    print(f"     Attacks: {', '.join(ATTACK_STRATEGIES)}")
-    print(f"     Turns:   {NUM_TURNS}")
+    print(f"     Attacks: {', '.join(attack_strategies)}")
+    print(f"     Turns:   {num_turns}")
 
     target = AzureAIAgentTarget(name=agent_name, version=agent_version)
 
@@ -155,8 +193,8 @@ def create_run(oai_client, eval_id: str, agent_name: str, agent_version: str, ta
             "type": "azure_ai_red_team",
             "item_generation_params": {
                 "type": "red_team_taxonomy",
-                "attack_strategies": ATTACK_STRATEGIES,
-                "num_turns": NUM_TURNS,
+                "attack_strategies": attack_strategies,
+                "num_turns": num_turns,
                 "source": {"type": "file_id", "id": taxonomy_id},
             },
             "target": target.as_dict(),
@@ -187,12 +225,12 @@ def poll_run(oai_client, eval_id: str, run_id: str) -> str:
         time.sleep(POLL_INTERVAL_SECONDS)
 
 
-def fetch_results(oai_client, eval_id: str, run_id: str, agent_name: str) -> list:
+def fetch_results(oai_client, eval_id: str, run_id: str, agent_name: str, output_dir: Path) -> list:
     """Fetch and save output items from a completed run."""
     print(f"  📥 Fetching results for '{agent_name}'...")
     items = list(oai_client.evals.runs.output_items.list(run_id=run_id, eval_id=eval_id))
 
-    output_path = OUTPUT_DIR / f"redteam_eval_output_items_{agent_name}.json"
+    output_path = output_dir / f"redteam_eval_output_items_{agent_name}.json"
     with open(output_path, "w") as f:
         json.dump(_to_serializable(items), f, indent=2, default=str)
 
@@ -213,7 +251,7 @@ def _to_serializable(obj):
     return obj
 
 
-def run_redteam_for_agent(project_client: AIProjectClient, agent_name: str) -> dict:
+def run_redteam_for_agent(project_client: AIProjectClient, agent_name: str, cfg: argparse.Namespace) -> dict:
     """Run the full red teaming pipeline for a single agent."""
     print()
     print(f"{'─' * 60}")
@@ -228,14 +266,14 @@ def run_redteam_for_agent(project_client: AIProjectClient, agent_name: str) -> d
 
     try:
         # Resolve agent version
-        agent_version = resolve_agent_version(project_client, agent_name)
+        agent_version = resolve_agent_version(project_client, agent_name, cfg.project_endpoint)
         result["agent_version"] = agent_version
         print(f"  📌 Agent version: {agent_version}")
 
         oai = project_client.get_openai_client()
 
         # Step 1: Create eval group
-        eval_id = create_eval(oai, agent_name)
+        eval_id = create_eval(oai, agent_name, cfg.model_deployment)
         result["eval_id"] = eval_id
 
         # Step 2: Create taxonomy
@@ -243,7 +281,11 @@ def run_redteam_for_agent(project_client: AIProjectClient, agent_name: str) -> d
         result["taxonomy_id"] = taxonomy_id
 
         # Step 3: Create and start run
-        run_id = create_run(oai, eval_id, agent_name, agent_version, taxonomy_id)
+        run_id = create_run(
+            oai, eval_id, agent_name, agent_version, taxonomy_id,
+            attack_strategies=cfg.attack_strategies,
+            num_turns=cfg.num_turns,
+        )
         result["run_id"] = run_id
 
         # Step 4: Poll for completion
@@ -252,7 +294,7 @@ def run_redteam_for_agent(project_client: AIProjectClient, agent_name: str) -> d
 
         # Step 5: Fetch results
         if status == "completed":
-            items = fetch_results(oai, eval_id, run_id, agent_name)
+            items = fetch_results(oai, eval_id, run_id, agent_name, cfg.output_dir)
             result["output_items_count"] = len(items)
         else:
             print(f"  ❌ Run ended with status: {status}")
@@ -274,26 +316,37 @@ def run_redteam_for_agent(project_client: AIProjectClient, agent_name: str) -> d
 
 
 def main():
-    banner()
+    args = parse_args()
+
+    # Resolve list values from comma-separated strings
+    args.agent_names = (
+        [a.strip() for a in args.agents.split(",") if a.strip()]
+        if args.agents
+        else DEFAULT_AGENTS
+    )
+    args.attack_strategies = [s.strip() for s in args.attack_strategies.split(",") if s.strip()]
+    args.output_dir.mkdir(exist_ok=True)
+
+    banner(args)
 
     credential = DefaultAzureCredential()
-    project_client = AIProjectClient(endpoint=PROJECT_ENDPOINT, credential=credential)
+    project_client = AIProjectClient(endpoint=args.project_endpoint, credential=credential)
     print("🔐 Authenticated via DefaultAzureCredential")
     print()
 
     summary = {
-        "project_endpoint": PROJECT_ENDPOINT,
-        "attack_strategies": ATTACK_STRATEGIES,
-        "num_turns": NUM_TURNS,
+        "project_endpoint": args.project_endpoint,
+        "attack_strategies": args.attack_strategies,
+        "num_turns": args.num_turns,
         "started_at": datetime.now(timezone.utc).isoformat(),
         "agents": [],
     }
 
-    for agent_name in AGENT_NAMES:
+    for agent_name in args.agent_names:
         agent_name = agent_name.strip()
         if not agent_name:
             continue
-        result = run_redteam_for_agent(project_client, agent_name)
+        result = run_redteam_for_agent(project_client, agent_name, args)
         summary["agents"].append(result)
 
         # Stop early if region is not supported
@@ -303,7 +356,7 @@ def main():
 
     summary["completed_at"] = datetime.now(timezone.utc).isoformat()
 
-    summary_path = OUTPUT_DIR / "redteam_summary.json"
+    summary_path = args.output_dir / "redteam_summary.json"
     with open(summary_path, "w") as f:
         json.dump(summary, f, indent=2, default=str)
 
