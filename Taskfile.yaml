@@ -53,6 +53,11 @@ tasks:
     vars:
       REGION: "{{default .DEFAULT_REGION .CLI_ARGS}}"
 
+  output:
+    desc:Shows Terraform outputs for {{.TITLE}}
+    cmds:
+      - terraform -chdir=./infrastructure output
+
   down:
     desc: Destroys all Azure resources and cleans up Terraform
     cmds:
