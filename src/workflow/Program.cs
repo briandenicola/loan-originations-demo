@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using Azure.AI.Projects;
+using Azure.Core;
 using Azure.Identity;
 using Azure.Monitor.OpenTelemetry.Exporter;
 using Azure.Storage.Blobs;
@@ -98,17 +99,33 @@ builder.Services.AddSingleton<UnderwritingService>();
 builder.Services.AddSingleton<PdfParsingService>();
 builder.Services.AddSingleton<LoanAgentPlugins>();
 
-// Build Entra ID credential chain: Azure CLI → Environment → Managed Identity
-var credential = new ChainedTokenCredential(
-    new AzureCliCredential(),
-    new EnvironmentCredential(),
-    new ManagedIdentityCredential(ManagedIdentityId.SystemAssigned));
+// Credential selection (the chiseled runtime image has NO shell, so
+// AzureCliCredential throws a fatal "/bin/sh not found" error that aborts a
+// ChainedTokenCredential before managed identity is ever tried):
+//   • Container Apps: a USER-assigned managed identity is attached and its client
+//     id is provided via AZURE_CLIENT_ID. Use it EXCLUSIVELY — no shell needed.
+//   • Local dev: fall back to Azure CLI → Environment credentials for the developer.
+// An SP login (AZURE_CLIENT_ID *and* AZURE_CLIENT_SECRET set) is treated as local,
+// so EnvironmentCredential handles it rather than managed identity.
+var managedIdentityClientId = Environment.GetEnvironmentVariable("AZURE_CLIENT_ID");
+var hasClientSecret = !string.IsNullOrEmpty(Environment.GetEnvironmentVariable("AZURE_CLIENT_SECRET"));
+var useManagedIdentity = !string.IsNullOrEmpty(managedIdentityClientId) && !hasClientSecret;
+
+TokenCredential credential = useManagedIdentity
+    ? new ManagedIdentityCredential(ManagedIdentityId.FromUserAssignedClientId(managedIdentityClientId))
+    : new ChainedTokenCredential(
+        new AzureCliCredential(),
+        new EnvironmentCredential());
+
+var authChainDescription = useManagedIdentity
+    ? $"User-assigned ManagedIdentity (client id {managedIdentityClientId})"
+    : "AzureCliCredential → EnvironmentCredential";
 
 // Diagnostic: attempt to acquire a token and print the result
 try
 {
     var tokenRequest = new Azure.Core.TokenRequestContext(new[] { "https://cognitiveservices.azure.com/.default" });
-    var token = await credential.GetTokenAsync(tokenRequest);
+    var token = await credential.GetTokenAsync(tokenRequest, CancellationToken.None);
     Console.WriteLine($"✅ Entra ID token acquired successfully. Expires: {token.ExpiresOn}");
 }
 catch (Exception ex)
@@ -126,7 +143,7 @@ if (!string.IsNullOrEmpty(foundryEndpoint))
     builder.Services.AddSingleton(projectClient);
     Console.WriteLine($"✅ Microsoft Agent Framework configured: {foundryEndpoint}");
     Console.WriteLine($"   Workflow:  Code-Based Coordinator (sequential agent calls via AIProjectClient)");
-    Console.WriteLine("   Auth chain: ManagedIdentity → EnvironmentCredential → AzureCliCredential");
+    Console.WriteLine($"   Auth: {authChainDescription}");
 }
 else
 {
