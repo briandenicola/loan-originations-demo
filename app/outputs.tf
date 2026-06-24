@@ -1,7 +1,3 @@
-output "CLASSIC_URL" {
-  value = "https://${azurerm_container_app.classic.ingress[0].fqdn}"
-}
-
 output "WORKFLOW_URL" {
   value = "https://${azurerm_container_app.workflow.ingress[0].fqdn}"
 }

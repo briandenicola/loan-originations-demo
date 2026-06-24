@@ -11,16 +11,23 @@ tasks:
       - terraform -chdir=./app init
 
   deploy:
-    desc: Builds ACR images and deploys Container Apps
+    desc: Builds the ACR image and deploys the Container App
     cmds:
       - task: build
       - task: apply
 
   build:
-    desc: Builds both classic and workflow images in ACR
+    desc: Builds the workflow image in ACR
     cmds:
-      - task: classic:acr-build
-      - task: workflow:acr-build
+      - az acr build -r {{.ACR_NAME}}
+        -t loan-origination-workflow:{{.COMMIT_VERSION}}
+        -t loan-origination-workflow:latest
+        -f src/workflow/Dockerfile .
+    vars:
+      COMMIT_VERSION:
+        sh: git rev-parse HEAD | cut -c 1-8
+      ACR_NAME:
+        sh: terraform -chdir=./infrastructure output -raw ACR_NAME
 
   apply:
     desc: Applies app Terraform to deploy Container Apps

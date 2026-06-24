@@ -319,37 +319,35 @@ task workflow:run      # Run on http://localhost:8082
 
 ### Deploy to Azure Container Apps
 
-The `app/` Terraform module deploys both implementations as Container Apps. It takes a single input — `APP_NAME` from the infrastructure outputs — and derives all resource names, endpoints, and connection strings by convention.
+The `app/` Terraform module deploys the workflow implementation as a Container App. It takes a single input — `APP_NAME` from the infrastructure outputs — and derives all resource names, endpoints, and connection strings by convention.
 
 ```bash
 # 1. Provision infrastructure (if not already done)
 task up
 
 # 2. Initialize agents in Foundry
-task classic:agents
 task workflow:agents
 
 # 3. Initialize the app Terraform
 task app:init
 
-# 4. Build container images in ACR and deploy to ACA
+# 4. Build the container image in ACR and deploy to ACA
 task app:deploy
 ```
 
-This runs `az acr build` for both Dockerfiles against the provisioned ACR, then applies the `app/` Terraform which creates:
+This runs `az acr build` for the workflow Dockerfile against the provisioned ACR, then applies the `app/` Terraform which creates:
 
 - **Resource Group**: `{app_name}_apps_rg`
 - **Managed Identity**: `{app_name}-app-identity` with `AcrPull`, `Cognitive Services User`, and `Azure AI Developer` roles
-- **Container App (Classic)**: `{app_name}-classic` — connected to the classic Foundry project
 - **Container App (Workflow)**: `{app_name}-workflow` — connected to the workflow Foundry project
 
 You can also run the steps individually:
 
 ```bash
-# Build images only (no deploy)
+# Build image only (no deploy)
 task app:build
 
-# Deploy only (images must already exist in ACR)
+# Deploy only (image must already exist in ACR)
 task app:apply
 
 # Tear down the Container Apps
@@ -366,11 +364,8 @@ All `app/` resources are derived from `APP_NAME` (e.g., `cub-34185`):
 | Identity | `cub-34185-app-identity` |
 | ACR | `cub34185acr` (looked up from `cub-34185-core_rg`) |
 | CAE | `cub-34185-env` (looked up from `cub-34185-core_rg`) |
-| Classic Container App | `cub-34185-classic` |
 | Workflow Container App | `cub-34185-workflow` |
-| Foundry Classic Endpoint | `https://cub-34185-foundry.services.ai.azure.com/api/projects/cub-34185-project-classic` |
 | Foundry Workflow Endpoint | `https://cub-34185-foundry.services.ai.azure.com/api/projects/cub-34185-project-workflow` |
-| App Insights (Classic) | `cub-34185-project-classic-appinsights` in `cub-34185-project-classic_rg` |
 | App Insights (Workflow) | `cub-34185-project-workflow-appinsights` in `cub-34185-project-workflow_rg` |
 
 ### Manual Steps
@@ -436,10 +431,10 @@ On startup, the application runs a health check against the health check agent i
 | Command | Description |
 |---------|-------------|
 | `task app:init` | Initialize Terraform for the `app/` module |
-| `task app:deploy` | Build ACR images + apply Terraform (full deploy) |
-| `task app:build` | Build both classic and workflow images in ACR |
-| `task app:apply` | Apply app Terraform only (images must exist) |
-| `task app:destroy` | Tear down the Container Apps |
+| `task app:deploy` | Build ACR image + apply Terraform (full deploy) |
+| `task app:build` | Build the workflow image in ACR |
+| `task app:apply` | Apply app Terraform only (image must exist) |
+| `task app:destroy` | Tear down the Container App |
 
 ### Classic Tasks (`task classic:*`)
 

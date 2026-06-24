@@ -6,9 +6,11 @@ resource "azurerm_role_assignment" "ai_foundry_owner" {
 }
 
 resource "azurerm_role_assignment" "ai_foundry_owner_project_manager" {
-  scope                = azurerm_resource_group.this.id
-  role_definition_name = "Azure AI Project Manager"
-  principal_id         = data.azurerm_client_config.current.object_id
+  scope = azurerm_resource_group.this.id
+  # "Azure AI Project Manager" was renamed to "Foundry Project Manager"; reference the
+  # stable built-in role definition ID so the assignment is unaffected by the rename.
+  role_definition_id = "${data.azurerm_subscription.current.id}/providers/Microsoft.Authorization/roleDefinitions/eadc314b-1a2d-4efa-be10-5d325db5065e"
+  principal_id       = data.azurerm_client_config.current.object_id
 }
 
 # resource "azurerm_role_assignment" "cosmosdb_operator_ai_foundry_project" {
