@@ -2,6 +2,7 @@ using System.Diagnostics;
 using Azure.AI.Projects;
 using Azure.Identity;
 using Azure.Monitor.OpenTelemetry.Exporter;
+using Azure.Storage.Blobs;
 using LoanOriginationDemo.Agent;
 using LoanOriginationDemo.Services;
 using OpenTelemetry;
@@ -138,6 +139,22 @@ Console.WriteLine($"📊 OpenTelemetry configured: service={serviceName}");
 Console.WriteLine($"   App Insights: {(string.IsNullOrEmpty(appInsightsCs) ? "Not configured" : "Connected")}");
 Console.WriteLine($"   OTLP endpoint: {(string.IsNullOrEmpty(otlpEndpoint) ? "Not configured" : otlpEndpoint)}");
 Console.WriteLine($"   Console exporter: Enabled");
+
+// Configure blob storage for run-artifact output (durable storage in Azure).
+// When not configured (local dev), the orchestrator falls back to the local filesystem.
+var blobServiceUri = builder.Configuration["BlobStorage:ServiceUri"];
+var blobContainerName = builder.Configuration["BlobStorage:ContainerName"];
+if (!string.IsNullOrEmpty(blobServiceUri) && !string.IsNullOrEmpty(blobContainerName))
+{
+    var blobServiceClient = new BlobServiceClient(new Uri(blobServiceUri), credential);
+    var containerClient = blobServiceClient.GetBlobContainerClient(blobContainerName);
+    builder.Services.AddSingleton(containerClient);
+    Console.WriteLine($"✅ Blob output storage configured: {blobServiceUri}{blobContainerName}");
+}
+else
+{
+    Console.WriteLine("ℹ️  Blob output storage not configured — run artifacts will be written to the local filesystem.");
+}
 
 builder.Services.AddSingleton<LoanAgentOrchestrator>();
 

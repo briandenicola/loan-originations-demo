@@ -50,6 +50,16 @@ resource "azurerm_container_app" "workflow" {
         name  = "AZURE_CLIENT_ID"
         value = azurerm_user_assigned_identity.app.client_id
       }
+
+      env {
+        name  = "BlobStorage__ServiceUri"
+        value = azurerm_storage_account.outputs.primary_blob_endpoint
+      }
+
+      env {
+        name  = "BlobStorage__ContainerName"
+        value = azurerm_storage_container.outputs.name
+      }
     }
 
     max_replicas = 3

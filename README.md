@@ -472,7 +472,10 @@ On startup, the application runs a health check against the health check agent i
 
 ## Output Files
 
-The workflow produces four JSON files in the `output/` directory:
+The workflow produces timestamped JSON artifacts for each run. The destination depends on configuration:
+
+- **Local development** — written to the `output/` directory.
+- **Azure Container Apps** — uploaded to an Azure Blob Storage container (`loan-outputs`) using the app's managed identity. Configured via the `BlobStorage__ServiceUri` and `BlobStorage__ContainerName` environment variables (set automatically by the `app/` Terraform module). When these are unset, the app falls back to the local filesystem.
 
 | File | Contents |
 |------|----------|

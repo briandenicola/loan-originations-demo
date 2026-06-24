@@ -2,6 +2,7 @@ using System.Diagnostics;
 using System.Diagnostics.Metrics;
 using System.Text.Json;
 using Azure.AI.Projects;
+using Azure.Storage.Blobs;
 using LoanOriginationDemo.Agent.Workflow;
 using LoanOriginationDemo.Models;
 using LoanOriginationDemo.Services;
@@ -130,6 +131,7 @@ public class LoanAgentOrchestrator
     private readonly AIProjectClient? _projectClient;
     private readonly IConfiguration _config;
     private readonly ILogger<LoanAgentOrchestrator> _logger;
+    private readonly BlobContainerClient? _blobContainer;
     private readonly string _outputDir;
     private readonly JsonSerializerOptions _jsonOpts;
 
@@ -137,22 +139,30 @@ public class LoanAgentOrchestrator
         LoanAgentPlugins plugins,
         IConfiguration config,
         ILogger<LoanAgentOrchestrator> logger,
-        AIProjectClient? projectClient = null)
+        AIProjectClient? projectClient = null,
+        BlobContainerClient? blobContainer = null)
     {
         _plugins = plugins;
         _projectClient = projectClient;
         _config = config;
         _logger = logger;
-        _outputDir = Path.Combine(Directory.GetCurrentDirectory(), "..", "output");
-        Directory.CreateDirectory(_outputDir);
+        _blobContainer = blobContainer;
+        _outputDir = config["OutputDirectory"]
+            ?? Path.Combine(Directory.GetCurrentDirectory(), "..", "output");
+
+        // Only the local filesystem path needs a directory; blob storage does not.
+        if (_blobContainer == null)
+            Directory.CreateDirectory(_outputDir);
+
         _jsonOpts = new JsonSerializerOptions
         {
             WriteIndented = true,
             PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower
         };
 
-        _logger.LogInformation("LoanAgentOrchestrator initialized (Agent Framework Workflows). Foundry: {FoundryStatus}, OutputDir: {OutputDir}",
-            _projectClient != null ? "Connected" : "NOT CONFIGURED", _outputDir);
+        _logger.LogInformation("LoanAgentOrchestrator initialized (Agent Framework Workflows). Foundry: {FoundryStatus}, Output: {OutputTarget}",
+            _projectClient != null ? "Connected" : "NOT CONFIGURED",
+            _blobContainer != null ? $"Blob ({_blobContainer.Uri})" : _outputDir);
     }
 
     /// <summary>
@@ -787,8 +797,19 @@ public class LoanAgentOrchestrator
     {
         var stamp = DateTime.UtcNow.ToString("yyyyMMdd-HHmmss");
         var stamped = Path.GetFileNameWithoutExtension(filename) + $"_{stamp}.json";
+        var json = JsonSerializer.Serialize(data, _jsonOpts);
+
+        if (_blobContainer != null)
+        {
+            var blob = _blobContainer.GetBlobClient(stamped);
+            using var stream = new MemoryStream(System.Text.Encoding.UTF8.GetBytes(json));
+            await blob.UploadAsync(stream, overwrite: true);
+            _logger.LogDebug("Uploaded output blob: {Filename} ({Size} bytes)", stamped, stream.Length);
+            return;
+        }
+
         var path = Path.Combine(_outputDir, stamped);
-        await File.WriteAllTextAsync(path, JsonSerializer.Serialize(data, _jsonOpts));
+        await File.WriteAllTextAsync(path, json);
         _logger.LogDebug("Wrote output file: {Filename} ({Size} bytes)", stamped, new FileInfo(path).Length);
     }
 }

@@ -14,6 +14,10 @@ locals {
   identity_name     = "${var.app_name}-app-identity"
   workflow_app_name = "${var.app_name}-workflow"
 
+  # Output artifact storage (must be globally unique, 3-24 lowercase alphanumeric)
+  storage_account_name  = substr("${replace(var.app_name, "-", "")}outsa", 0, 24)
+  output_container_name = "loan-outputs"
+
   # Container images
   acr_login_server = "${local.acr_name}.azurecr.io"
   workflow_image   = "${local.acr_login_server}/loan-origination-workflow:${var.commit_version}"

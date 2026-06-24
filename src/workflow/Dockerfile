@@ -21,6 +21,9 @@ RUN dotnet publish src/workflow/LoanOrigination.csproj -c Release \
 # Copy materials into publish output (app expects ../../materials/data relative to cwd)
 RUN mkdir -p /app/materials/data && cp -r ./materials/data/* /app/materials/data/
 
+# Pre-create a writable output directory (chiseled runtime has no shell to mkdir later)
+RUN mkdir -p /app/output
+
 # ── Runtime stage ─────────────────────────────────────────────
 FROM mcr.microsoft.com/dotnet/aspnet:10.0-noble-chiseled AS final
 
@@ -30,10 +33,12 @@ EXPOSE 8080
 
 COPY --from=build /app/publish .
 COPY --from=build /app/materials ../materials
+COPY --from=build --chown=$APP_UID:$APP_UID /app/output ./output
 
 ENV ASPNETCORE_URLS=http://+:8080 \
     DOTNET_RUNNING_IN_CONTAINER=true \
-    DOTNET_EnableDiagnostics=0
+    DOTNET_EnableDiagnostics=0 \
+    OutputDirectory=/app/output
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
     CMD ["dotnet", "LoanOrigination.dll", "--urls", "http://localhost:8080/health" ]
